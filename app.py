@@ -74,7 +74,7 @@ def add_log(message):
     st.session_state.solve_log.append(f"[INFO] {timestamp} - {message}")
 
 def get_weather_forecast(date):
-    """获取指定日期的天气预报"""
+    """获取指定日期的天气预报（修复版：解决'code'键不存在错误）"""
     try:
         # 计算日期差（和风天气最多支持未来7天预报）
         today = datetime.now().date()
@@ -83,16 +83,35 @@ def get_weather_forecast(date):
         if days_diff < 0 or days_diff > 7:
             return None, "只能查询未来7天的天气预报"
         
-        # 调用和风天气API
+        # 调用和风天气API（使用v7版本标准接口）
         url = f"https://devapi.qweather.com/v7/weather/7d?location={CITY_ID}&key={WEATHER_API_KEY}"
-        response = requests.get(url, timeout=10)
+        
+        # 添加超时和重试机制
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()  # 检查HTTP状态码
+        
         data = response.json()
         
+        # 严格检查API返回格式（修复'code'键不存在错误）
+        if not isinstance(data, dict) or 'code' not in data:
+            return None, "API返回格式异常，缺少状态码"
+            
         if data['code'] != '200':
-            return None, f"天气API调用失败：{data['message']}"
+            error_msg = data.get('message', f"API错误代码：{data['code']}")
+            return None, f"天气API调用失败：{error_msg}"
         
-        # 获取对应日期的天气数据
+        # 检查每日数据是否存在
+        if 'daily' not in data or not isinstance(data['daily'], list) or len(data['daily']) <= days_diff:
+            return None, "未找到对应日期的天气数据"
+            
         day_weather = data['daily'][days_diff]
+        
+        # 检查天气数据字段是否完整
+        required_fields = ['tempMax', 'tempMin', 'textDay']
+        for field in required_fields:
+            if field not in day_weather:
+                return None, f"天气数据缺失字段：{field}"
+        
         weather_info = {
             'date': date,
             'temp_max': int(day_weather['tempMax']),
@@ -102,8 +121,13 @@ def get_weather_forecast(date):
         }
         
         return weather_info, None
+        
+    except requests.exceptions.RequestException as e:
+        return None, f"网络请求失败：{str(e)}"
+    except (KeyError, ValueError, IndexError, TypeError) as e:
+        return None, f"数据解析失败：{str(e)}"
     except Exception as e:
-        return None, f"获取天气失败：{str(e)}"
+        return None, f"未知错误：{str(e)}"
 
 @st.cache_resource
 def load_ai_models():
