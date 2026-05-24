@@ -19,7 +19,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 隐藏Streamlit默认的右上角菜单和底部水印
+# 隐藏Streamlit默认的右上角菜单和底部水印 + 全局美化样式【仅新增样式，无逻辑修改】
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
@@ -28,6 +28,33 @@ footer {visibility: hidden;}
     height: 50px;
     font-size: 16px;
     width: 100%;
+    border-radius: 12px;
+    border: none;
+    background-color: #1f77b4;
+    color: white;
+    transition: all 0.3s ease;
+}
+.stButton>button:hover {
+    background-color: #155a8a;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(31, 119, 180, 0.3);
+}
+.stMetric {
+    background-color: #f8f9fa;
+    padding: 12px;
+    border-radius: 10px;
+    border-left: 4px solid #1f77b4;
+}
+.stProgress > div > div {
+    background-color: #1f77b4;
+    border-radius: 10px;
+}
+h1, h2, h3 {
+    color: #2c3e50;
+    font-weight: 600;
+}
+.stDivider {
+    border-color: #e9ecef;
 }
 </style>
 """
@@ -243,7 +270,15 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     return model, schedule_df
 
 # -------------------------- 侧边栏导航 --------------------------
-st.sidebar.title("🚍 智能公交调度系统")
+st.sidebar.title("🚌 智能公交调度系统")
+# 侧边栏背景美化
+st.sidebar.markdown("""
+<style>
+[data-testid="stSidebar"] {
+    background-color: #f0f5fa;
+}
+</style>
+""", unsafe_allow_html=True)
 st.sidebar.divider()
 page = st.sidebar.radio(
     "功能模块",
@@ -254,7 +289,7 @@ st.sidebar.info("AI预测-优化建模 智能公交调度")
 
 # -------------------------- 页面1：今日调度 --------------------------
 if page == "📅 今日调度":
-    st.header("AI预测-优化建模 智能公交调度")
+    st.header("🚌 AI预测-优化建模 智能公交调度", divider="blue")
     st.divider()
 
     col1, col2 = st.columns(2)
@@ -269,7 +304,7 @@ if page == "📅 今日调度":
         solve_time = st.number_input("求解时间上限（秒）", min_value=60, max_value=3600, value=300)
 
     st.divider()
-    btn1, btn2, btn3, btn4, btn5 = st.columns(5)
+    btn1, btn2, btn3, btn4, btn5 = st.columns(5, gap="small")
 
     with btn1:
         if st.button("读取班次表"):
@@ -379,7 +414,7 @@ if page == "📅 今日调度":
     st.progress(st.session_state.progress, text=f"当前进度：{st.session_state.progress}%")
     st.divider()
 
-    status1, status2, status3, status4, status5 = st.columns(5)
+    status1, status2, status3, status4, status5 = st.columns(5, gap="small")
     with status1:
         st.metric("当前阶段", st.session_state.current_stage)
     with status2:
@@ -401,7 +436,7 @@ if page == "📅 今日调度":
 
 # -------------------------- 页面2：数据管理 --------------------------
 elif page == "📊 数据管理":
-    st.header("数据管理模块")
+    st.header("📊 数据管理模块", divider="blue")
     st.divider()
 
     st.subheader("班次数据管理")
@@ -433,7 +468,7 @@ elif page == "📊 数据管理":
 
 # -------------------------- 页面3：AI预测结果 --------------------------
 elif page == "🤖 AI预测结果":
-    st.header("AI客流预测结果")
+    st.header("🤖 AI客流预测结果", divider="blue")
     st.divider()
     
     if 'predictions' not in st.session_state or st.session_state.predictions is None:
@@ -465,7 +500,7 @@ elif page == "🤖 AI预测结果":
 
 # -------------------------- 页面4：优化求解 --------------------------
 elif page == "⚙️ 优化求解":
-    st.header("优化求解过程监控")
+    st.header("⚙️ 优化求解过程监控", divider="blue")
     st.divider()
 
     if st.session_state.optimization_result is None:
@@ -499,7 +534,7 @@ elif page == "⚙️ 优化求解":
 
 # -------------------------- 页面5：排班结果 --------------------------
 elif page == "📋 排班结果":
-    st.header("最终排班结果")
+    st.header("📋 最终排班结果", divider="blue")
     st.divider()
 
     if st.session_state.schedule_data is None:
