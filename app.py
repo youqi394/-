@@ -7,6 +7,7 @@ import requests
 import gurobipy as gp
 from gurobipy import GRB
 from datetime import datetime
+import re
 
 # -------------------------- 全局配置 --------------------------
 st.set_page_config(
@@ -120,6 +121,10 @@ def add_log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.session_state.solve_log.append(f"[INFO] {timestamp} - {message}")
 
+def normalize_column_name(name):
+    """标准化列名：移除所有空格、括号、特殊字符，转为小写"""
+    return re.sub(r'[\s()%]', '', str(name)).lower()
+
 # -------------------------- 天气获取 --------------------------
 def get_weather_forecast(date):
     WEATHER_API_KEY = "e088a35c897818780a479973d4623063"
@@ -145,10 +150,10 @@ def get_weather_forecast(date):
     except:
         return {"date": date, "temp_max": 25, "temp_min": 18, "weather": "晴", "is_rain": 0}, None
 
-# -------------------------- ✅ 更新：适配无时段列的运行时间CSV --------------------------
+# -------------------------- ✅ 终极修复：自动匹配运行时间列名 --------------------------
 @st.cache_resource
 def load_runtime_data():
-    """从data文件夹加载运行时间CSV，格式：天气,75%运行时间 (min)"""
+    """从data文件夹加载运行时间CSV，自动匹配列名"""
     try:
         runtime_df = pd.read_csv("data/运行时间75%分位数.csv", dtype=str, encoding='utf-8')
     except:
@@ -156,28 +161,43 @@ def load_runtime_data():
             runtime_df = pd.read_csv("data/运行时间75%分位数.csv", dtype=str, encoding='gbk')
         except Exception as e:
             add_log(f"⚠️ 未找到运行时间文件：{str(e)}")
-            return None
+            return None, f"文件不存在或无法读取：{str(e)}"
     
     # 清洗列名
     runtime_df.columns = runtime_df.columns.str.strip()
     runtime_df = runtime_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     
-    # ✅ 检查必需列：天气,75%运行时间 (min)
-    required_columns = ["天气", "75%运行时间 (min)"]
-    missing_columns = [col for col in required_columns if col not in runtime_df.columns]
+    # 显示实际列名用于调试
+    actual_columns = list(runtime_df.columns)
+    add_log(f"📌 运行时间文件实际列名：{actual_columns}")
     
-    if missing_columns:
-        add_log(f"⚠️ 运行时间文件缺少列：{missing_columns}")
-        add_log(f"📌 运行时间文件实际列名：{list(runtime_df.columns)}")
-        return None
+    # 自动匹配列名
+    weather_col = None
+    runtime_col = None
     
+    for col in actual_columns:
+        normalized = normalize_column_name(col)
+        if "天气" in normalized or "weather" in normalized:
+            weather_col = col
+        elif "运行时间" in normalized or "runtime" in normalized or "75" in normalized:
+            runtime_col = col
+    
+    if not weather_col or not runtime_col:
+        error_msg = f"无法自动匹配列名。实际列名：{actual_columns}"
+        add_log(f"❌ {error_msg}")
+        return None, error_msg
+    
+    # 重命名为标准列名
+    runtime_df = runtime_df.rename(columns={weather_col: "天气", runtime_col: "75%运行时间 (min)"})
+    
+    add_log(f"✅ 成功匹配列名：天气='{weather_col}', 运行时间='{runtime_col}'")
     add_log(f"✅ 成功加载 data/运行时间75%分位数.csv，共{len(runtime_df)}条记录")
-    return runtime_df
+    return runtime_df, None
 
-# -------------------------- 电量消耗加载（列名：天气类型） --------------------------
+# -------------------------- ✅ 自动匹配电量消耗列名 --------------------------
 @st.cache_resource
 def load_power_data():
-    """从data文件夹加载四季电量消耗CSV，自动清洗数据并检查列名"""
+    """从data文件夹加载四季电量消耗CSV，自动匹配列名"""
     try:
         power_df = pd.read_csv("data/电量消耗.csv", dtype=str, encoding='utf-8')
     except:
@@ -187,19 +207,53 @@ def load_power_data():
     power_df.columns = power_df.columns.str.strip()
     power_df = power_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     
-    # 检查必需列：时段,天气类型,春季,夏季,秋季,冬季
-    required_columns = ["时段", "天气类型", "春季", "夏季", "秋季", "冬季"]
-    missing_columns = [col for col in required_columns if col not in power_df.columns]
+    # 显示实际列名用于调试
+    actual_columns = list(power_df.columns)
+    add_log(f"📌 电量消耗文件实际列名：{actual_columns}")
     
-    if missing_columns:
-        add_log(f"⚠️ 电量消耗文件缺少列：{missing_columns}")
-        add_log(f"📌 电量消耗文件实际列名：{list(power_df.columns)}")
-        return None
+    # 自动匹配列名
+    time_col = None
+    weather_col = None
+    spring_col = None
+    summer_col = None
+    autumn_col = None
+    winter_col = None
     
+    for col in actual_columns:
+        normalized = normalize_column_name(col)
+        if "时段" in normalized or "time" in normalized:
+            time_col = col
+        elif "天气" in normalized or "weather" in normalized:
+            weather_col = col
+        elif "春" in normalized or "spring" in normalized:
+            spring_col = col
+        elif "夏" in normalized or "summer" in normalized:
+            summer_col = col
+        elif "秋" in normalized or "autumn" in normalized or "fall" in normalized:
+            autumn_col = col
+        elif "冬" in normalized or "winter" in normalized:
+            winter_col = col
+    
+    if not all([time_col, weather_col, spring_col, summer_col, autumn_col, winter_col]):
+        error_msg = f"无法自动匹配列名。实际列名：{actual_columns}"
+        add_log(f"❌ {error_msg}")
+        return None, error_msg
+    
+    # 重命名为标准列名
+    power_df = power_df.rename(columns={
+        time_col: "时段",
+        weather_col: "天气类型",
+        spring_col: "春季",
+        summer_col: "夏季",
+        autumn_col: "秋季",
+        winter_col: "冬季"
+    })
+    
+    add_log(f"✅ 成功匹配列名：时段='{time_col}', 天气类型='{weather_col}', 春季='{spring_col}', 夏季='{summer_col}', 秋季='{autumn_col}', 冬季='{winter_col}'")
     add_log(f"✅ 成功加载 data/电量消耗.csv，共{len(power_df)}条记录")
-    return power_df
+    return power_df, None
 
-# -------------------------- ✅ 更新：运行时间只按天气匹配 --------------------------
+# -------------------------- ✅ 统计预测逻辑 --------------------------
 def statistical_prediction(weather_info):
     """
     统计预测逻辑：
@@ -210,8 +264,8 @@ def statistical_prediction(weather_info):
     5. 按早高峰→晚高峰→平峰→低峰排序
     """
     current_weather = weather_info['weather']
-    power_df = load_power_data()
-    runtime_df = load_runtime_data()
+    power_df, power_error = load_power_data()
+    runtime_df, runtime_error = load_runtime_data()
     
     # 如果电量数据加载失败，返回默认值
     if power_df is None:
@@ -235,7 +289,7 @@ def statistical_prediction(weather_info):
     # 筛选当日天气的电量数据
     matched_power = power_df[power_df['天气类型'] == current_weather].copy()
     
-    # ✅ 筛选当日天气的运行时间数据（所有时段共用）
+    # 筛选当日天气的运行时间数据（所有时段共用）
     runtime_value = "0.00"
     if runtime_df is not None:
         matched_runtime = runtime_df[runtime_df['天气'] == current_weather].copy()
@@ -460,18 +514,18 @@ if page == "📅 今日调度":
     with row2_col2:
         st.metric("目标值", f"{st.session_state.current_objective:.2f}")
 
-# -------------------------- 数据管理页面（更新格式提示） --------------------------
+# -------------------------- 数据管理页面（显示详细调试信息） --------------------------
 elif page == "📊 数据管理":
     st.header("📊 数据管理", divider="blue")
     
     st.subheader("电量消耗数据状态")
     try:
-        power_df = load_power_data()
+        power_df, power_error = load_power_data()
         if power_df is not None:
             st.success("✅ 成功加载 data/电量消耗.csv")
             st.dataframe(power_df, use_container_width=True)
         else:
-            st.error("❌ 电量消耗数据加载失败")
+            st.error(f"❌ 电量消耗数据加载失败：{power_error}")
             st.info("CSV格式要求：时段,天气类型,春季,夏季,秋季,冬季")
     except Exception as e:
         st.error(f"❌ 加载失败：{str(e)}")
@@ -480,12 +534,12 @@ elif page == "📊 数据管理":
     
     st.subheader("运行时间75%分位数数据状态")
     try:
-        runtime_df = load_runtime_data()
+        runtime_df, runtime_error = load_runtime_data()
         if runtime_df is not None:
             st.success("✅ 成功加载 data/运行时间75%分位数.csv")
             st.dataframe(runtime_df, use_container_width=True)
         else:
-            st.error("❌ 运行时间数据加载失败")
+            st.error(f"❌ 运行时间数据加载失败：{runtime_error}")
             st.info("CSV格式要求：天气,75%运行时间 (min)")
     except Exception as e:
         st.error(f"❌ 加载失败：{str(e)}")
