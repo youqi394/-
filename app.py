@@ -50,26 +50,32 @@ h1, h2, h3 {
     font-weight: 600;
 }
 
-/* ✅ 修复1：进度文字不再被蓝色条盖住 */
-.stProgress > div:first-child {
-    height: auto !important;
-    background: none !important;
-    margin-bottom: 8px;
+/* ✅ 彻底修复：进度文字不再被蓝色条覆盖 */
+.stProgress {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
-.stProgress > div:first-child > div {
+.stProgress > div:first-child {
     position: static !important;
+    background: transparent !important;
+    height: auto !important;
     color: #2c3e50 !important;
     font-size: 16px !important;
     font-weight: 500 !important;
+    padding: 0 !important;
 }
 .stProgress > div:last-child {
     height: 12px !important;
+    margin: 0 !important;
 }
 
-/* ✅ 修复2：调小metric数值字体，确保完整显示 */
+/* ✅ 优化metric字体大小，确保完整显示 */
 .stMetric [data-testid="stMetricValue"] {
-    font-size: 1.8rem !important;
+    font-size: 1.7rem !important;
     font-weight: 600 !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
 }
 </style>
 """
@@ -359,12 +365,23 @@ if page == "📅 今日调度":
     st.divider()
     st.progress(st.session_state.progress / 100, text=f"进度 {st.session_state.progress}%")
     st.divider()
-    s1,s2,s3,s4,s5 = st.columns(5,gap="small")
-    s1.metric("当前阶段", st.session_state.current_stage)
-    s2.metric("已用时间", f"{int(time.time()-st.session_state.start_time)}s" if st.session_state.start_time else "0s")
-    s3.metric("预计剩余", f"{int((100-st.session_state.progress)*0.5)}s" if st.session_state.progress<100 else "0s")
-    s4.metric("Gap", f"{st.session_state.current_gap:.2f}")
-    s5.metric("目标值", f"{st.session_state.current_objective:.2f}")
+
+    # ✅ 重新排版为两行：第一行3个，第二行2个
+    row1_col1, row1_col2, row1_col3 = st.columns(3, gap="medium")
+    with row1_col1:
+        st.metric("当前阶段", st.session_state.current_stage)
+    with row1_col2:
+        st.metric("已用时间", f"{int(time.time()-st.session_state.start_time)}s" if st.session_state.start_time else "0s")
+    with row1_col3:
+        st.metric("预计剩余", f"{int((100-st.session_state.progress)*0.5)}s" if st.session_state.progress<100 else "0s")
+
+    st.divider()
+    
+    row2_col1, row2_col2 = st.columns(2, gap="medium")
+    with row2_col1:
+        st.metric("Gap", f"{st.session_state.current_gap:.2f}")
+    with row2_col2:
+        st.metric("目标值", f"{st.session_state.current_objective:.2f}")
 
 # -------------------------- 数据管理 --------------------------
 elif page == "📊 数据管理":
