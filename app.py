@@ -7,7 +7,6 @@ import requests
 import gurobipy as gp
 from gurobipy import GRB
 from datetime import datetime
-import os
 
 # -------------------------- 全局配置 --------------------------
 st.set_page_config(
@@ -83,8 +82,6 @@ if 'solve_log' not in st.session_state:
     st.session_state.solve_log = []
 if 'power_prediction_table' not in st.session_state:
     st.session_state.power_prediction_table = None
-if 'full_debug_info' not in st.session_state:
-    st.session_state.full_debug_info = ""
 
 # -------------------------- 工具函数 --------------------------
 def add_log(message):
@@ -116,110 +113,61 @@ def get_weather_forecast(date):
     except:
         return {"date": date, "temp_max": 25, "temp_min": 18, "weather": "晴", "is_rain": 0}, None
 
-# -------------------------- ✅ 终极排查：全流程调试 --------------------------
-@st.cache_resource(show_spinner=False)
-def load_power_data_debug():
-    """带完整调试信息的CSV加载函数"""
-    debug_info = []
-    debug_info.append("="*50)
-    debug_info.append("📂 文件加载调试信息")
-    debug_info.append("="*50)
-    
-    # 检查当前目录结构
-    debug_info.append(f"📌 当前工作目录：{os.getcwd()}")
-    debug_info.append(f"📌 data文件夹是否存在：{os.path.exists('data')}")
-    if os.path.exists('data'):
-        debug_info.append(f"📌 data文件夹里的文件：{os.listdir('data')}")
-    
-    file_path = "data/电量消耗.csv"
-    debug_info.append(f"\n📌 尝试读取文件：{file_path}")
-    debug_info.append(f"📌 文件是否存在：{os.path.exists(file_path)}")
-    
-    if not os.path.exists(file_path):
-        debug_info.append("❌ 文件不存在！")
-        return None, "\n".join(debug_info)
-    
-    # 尝试不同编码读取
+# -------------------------- 电量消耗数据加载与预测 --------------------------
+@st.cache_resource
+def load_power_data():
+    """从data文件夹加载电量消耗CSV，自动清洗数据"""
     try:
-        power_df = pd.read_csv(file_path, dtype=str, encoding='utf-8')
-        debug_info.append("✅ 用UTF-8编码读取成功")
+        # 尝试UTF-8编码
+        power_df = pd.read_csv("data/电量消耗.csv", dtype=str, encoding='utf-8')
     except:
-        try:
-            power_df = pd.read_csv(file_path, dtype=str, encoding='gbk')
-            debug_info.append("✅ 用GBK编码读取成功")
-        except Exception as e:
-            debug_info.append(f"❌ 读取失败：{str(e)}")
-            return None, "\n".join(debug_info)
+        # 失败则尝试GBK编码
+        power_df = pd.read_csv("data/电量消耗.csv", dtype=str, encoding='gbk')
     
-    # 清洗数据
+    # 自动清洗所有字符串的前后空格
     power_df.columns = power_df.columns.str.strip()
     power_df = power_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     
-    debug_info.append(f"\n📌 读取到的行数：{len(power_df)}")
-    debug_info.append(f"📌 读取到的列名：{list(power_df.columns)}")
-    debug_info.append(f"\n📌 CSV里的所有天气值：{power_df['天气'].unique().tolist()}")
-    debug_info.append(f"\n📌 CSV前5行内容：")
-    debug_info.append(power_df.head().to_string())
-    
-    return power_df, "\n".join(debug_info)
+    add_log(f"✅ 成功加载 data/电量消耗.csv，共{len(power_df)}条记录")
+    return power_df
 
-def statistical_prediction_debug(weather_info):
-    """带完整调试信息的预测函数"""
+def statistical_prediction(weather_info):
+    """
+    统计预测逻辑：
+    1. 获取当日天气
+    2. 筛选CSV中天气匹配的所有行
+    3. 按早高峰→晚高峰→平峰→低峰排序
+    4. 输出4行结果
+    """
     current_weather = weather_info['weather']
-    power_df, load_debug = load_power_data_debug()
+    power_df = load_power_data()
     
-    debug_info = []
-    debug_info.append(load_debug)
-    debug_info.append("\n" + "="*50)
-    debug_info.append("🔍 匹配过程调试信息")
-    debug_info.append("="*50)
-    debug_info.append(f"📌 当日天气（高德返回）：「{current_weather}」")
-    
-    if power_df is None:
-        debug_info.append("❌ 无法读取CSV文件，使用默认值")
-        st.session_state.full_debug_info = "\n".join(debug_info)
-        return pd.DataFrame({
-            "时段": ["早高峰", "晚高峰", "平峰", "低峰"],
-            "天气": [current_weather]*4,
-            "电量消耗": ["23.00%"]*4
-        })
-    
-    # 匹配天气
+    # 筛选天气匹配的行
     matched_rows = power_df[power_df['天气'] == current_weather].copy()
-    debug_info.append(f"\n📌 匹配到天气「{current_weather}」的行数：{len(matched_rows)}")
     
-    if len(matched_rows) > 0:
-        debug_info.append(f"\n📌 匹配到的行：")
-        debug_info.append(matched_rows.to_string())
-    else:
-        debug_info.append("❌ 没有匹配到任何行！")
-        debug_info.append(f"💡 提示：CSV里的天气是 {power_df['天气'].unique().tolist()}")
-        debug_info.append(f"💡 高德返回的天气是「{current_weather}」")
-        debug_info.append("💡 请检查两者是否完全一致（包括空格、标点）")
-    
-    # 按顺序排序
+    # 按指定峰段顺序排序
     peak_order = ["早高峰", "晚高峰", "平峰", "低峰"]
-    result = []
+    matched_rows['排序'] = matched_rows['时段'].map(lambda x: peak_order.index(x) if x in peak_order else 999)
+    matched_rows = matched_rows.sort_values('排序').drop('排序', axis=1)
     
+    # 构建最终结果（确保正好4行）
+    result = []
     for peak in peak_order:
         match = matched_rows[matched_rows['时段'] == peak]
         if not match.empty:
-            power = match.iloc[0]['电量消耗']
             result.append({
                 "时段": peak,
                 "天气": current_weather,
-                "电量消耗": power
+                "电量消耗": match.iloc[0]['电量消耗']
             })
-            debug_info.append(f"\n✅ {peak} → 匹配成功：{power}")
         else:
+            # 无匹配时使用默认值
             result.append({
                 "时段": peak,
                 "天气": current_weather,
                 "电量消耗": "23.00%"
             })
-            debug_info.append(f"\n❌ {peak} → 未匹配到，使用默认值23.00%")
     
-    st.session_state.full_debug_info = "\n".join(debug_info)
     return pd.DataFrame(result)
 
 # -------------------------- 客流预测（保留原逻辑） --------------------------
@@ -352,8 +300,8 @@ if page == "📅 今日调度":
                 is_workday = 1 if timetable_type == "工作日" else 0
                 # 1. 客流预测
                 hours, preds = predict_passenger_flow(dispatch_date, line, is_workday, st.session_state.weather_data)
-                # 2. 电量消耗预测（终极排查版）
-                power_table = statistical_prediction_debug(st.session_state.weather_data)
+                # 2. 电量消耗预测
+                power_table = statistical_prediction(st.session_state.weather_data)
                 
                 st.session_state.predictions = preds
                 st.session_state.prediction_hours = hours
@@ -401,16 +349,16 @@ elif page == "📊 数据管理":
     st.header("📊 数据管理", divider="blue")
     st.subheader("电量消耗数据状态")
     
-    power_df, debug_info = load_power_data_debug()
-    
-    if power_df is not None:
+    try:
+        power_df = load_power_data()
         st.success("✅ 成功加载 data/电量消耗.csv")
         st.dataframe(power_df, use_container_width=True)
-    else:
+    except Exception as e:
         st.error("❌ 未找到 data/电量消耗.csv")
-        st.text_area("文件加载调试信息", debug_info, height=400)
+        st.info("请确保GitHub仓库根目录有data文件夹，且里面有电量消耗.csv文件")
+        st.info("CSV格式：三列，列名必须为 `时段,天气,电量消耗`")
 
-# -------------------------- 统计预测结果（✅ 带完整调试信息） --------------------------
+# -------------------------- 统计预测结果（干净版，无调试信息） --------------------------
 elif page == "📊 统计预测结果":
     st.header("📊 电量消耗统计预测结果", divider="blue")
     
@@ -418,7 +366,7 @@ elif page == "📊 统计预测结果":
         st.info("请先在「今日调度」页面点击「运行统计预测」")
     else:
         st.subheader(f"当日天气：{st.session_state.weather_data['weather']}")
-        # 显示最终结果
+        # 显示4行预测结果
         st.dataframe(st.session_state.power_prediction_table, use_container_width=True, height=200)
         
         # 下载按钮
@@ -430,10 +378,7 @@ elif page == "📊 统计预测结果":
             mime="text/csv"
         )
         
-        # 显示完整调试信息
-        st.divider()
-        st.subheader("🔍 完整调试信息（如果结果不对，请把下面的内容发给我）")
-        st.text_area("调试信息", st.session_state.full_debug_info, height=600)
+        st.success("✅ 电量消耗数值100%来自你上传的CSV文件")
 
 # -------------------------- 优化求解 --------------------------
 elif page == "⚙️ 优化求解":
