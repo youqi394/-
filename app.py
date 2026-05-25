@@ -49,6 +49,28 @@ h1, h2, h3 {
     color: #2c3e50;
     font-weight: 600;
 }
+
+/* ✅ 修复1：进度文字不再被蓝色条盖住 */
+.stProgress > div:first-child {
+    height: auto !important;
+    background: none !important;
+    margin-bottom: 8px;
+}
+.stProgress > div:first-child > div {
+    position: static !important;
+    color: #2c3e50 !important;
+    font-size: 16px !important;
+    font-weight: 500 !important;
+}
+.stProgress > div:last-child {
+    height: 12px !important;
+}
+
+/* ✅ 修复2：调小metric数值字体，确保完整显示 */
+.stMetric [data-testid="stMetricValue"] {
+    font-size: 1.8rem !important;
+    font-weight: 600 !important;
+}
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -335,7 +357,7 @@ if page == "📅 今日调度":
                 st.warning("⚠️ 请先完成求解")
 
     st.divider()
-    st.progress(st.session_state.progress, text=f"进度 {st.session_state.progress}%")
+    st.progress(st.session_state.progress / 100, text=f"进度 {st.session_state.progress}%")
     st.divider()
     s1,s2,s3,s4,s5 = st.columns(5,gap="small")
     s1.metric("当前阶段", st.session_state.current_stage)
@@ -358,7 +380,7 @@ elif page == "📊 数据管理":
         st.info("请确保GitHub仓库根目录有data文件夹，且里面有电量消耗.csv文件")
         st.info("CSV格式：三列，列名必须为 `时段,天气,电量消耗`")
 
-# -------------------------- 统计预测结果（干净版，无调试信息） --------------------------
+# -------------------------- 统计预测结果 --------------------------
 elif page == "📊 统计预测结果":
     st.header("📊 电量消耗统计预测结果", divider="blue")
     
