@@ -145,22 +145,27 @@ def get_weather_forecast(date):
     except:
         return {"date": date, "temp_max": 25, "temp_min": 18, "weather": "晴", "is_rain": 0}, None
 
-# -------------------------- ✅ 新增：加载运行时间数据 --------------------------
+# -------------------------- ✅ 修复：正确的文件名+健壮错误处理 --------------------------
 @st.cache_resource
 def load_runtime_data():
-    """从data文件夹加载运行时间75%分为数CSV，自动清洗数据"""
+    """从data文件夹加载运行时间75%分位数CSV，自动清洗数据"""
     try:
-        runtime_df = pd.read_csv("data/运行时间75%分为数.csv", dtype=str, encoding='utf-8')
+        # ✅ 修正文件名："分位数"不是"分为数"
+        runtime_df = pd.read_csv("data/运行时间75%分位数.csv", dtype=str, encoding='utf-8')
     except:
-        runtime_df = pd.read_csv("data/运行时间75%分为数.csv", dtype=str, encoding='gbk')
+        try:
+            runtime_df = pd.read_csv("data/运行时间75%分位数.csv", dtype=str, encoding='gbk')
+        except Exception as e:
+            add_log(f"⚠️ 未找到运行时间文件：{str(e)}")
+            return None
     
     runtime_df.columns = runtime_df.columns.str.strip()
     runtime_df = runtime_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     
-    add_log(f"✅ 成功加载 data/运行时间75%分为数.csv，共{len(runtime_df)}条记录")
+    add_log(f"✅ 成功加载 data/运行时间75%分位数.csv，共{len(runtime_df)}条记录")
     return runtime_df
 
-# -------------------------- ✅ 更新：加载四季电量消耗数据 --------------------------
+# -------------------------- 加载四季电量消耗数据 --------------------------
 @st.cache_resource
 def load_power_data():
     """从data文件夹加载四季电量消耗CSV，自动清洗数据"""
@@ -175,7 +180,7 @@ def load_power_data():
     add_log(f"✅ 成功加载 data/电量消耗.csv，共{len(power_df)}条记录")
     return power_df
 
-# -------------------------- ✅ 更新：合并电量和运行时间预测 --------------------------
+# -------------------------- ✅ 更新：健壮的合并预测逻辑 --------------------------
 def statistical_prediction(weather_info):
     """
     统计预测逻辑：
@@ -190,7 +195,6 @@ def statistical_prediction(weather_info):
     
     # 筛选当日天气的所有数据
     matched_power = power_df[power_df['天气'] == current_weather].copy()
-    matched_runtime = runtime_df[runtime_df['天气'] == current_weather].copy()
     
     # 按指定峰段顺序排序并合并
     peak_order = ["早高峰", "晚高峰", "平峰", "低峰"]
@@ -199,8 +203,6 @@ def statistical_prediction(weather_info):
     for peak in peak_order:
         # 匹配电量数据
         power_row = matched_power[matched_power['时段'] == peak]
-        # 匹配运行时间数据
-        runtime_row = matched_runtime[matched_runtime['时段'] == peak]
         
         # 提取四季电量（无匹配时使用默认值）
         spring = power_row.iloc[0]['春季'] if not power_row.empty else "23.00%"
@@ -208,18 +210,24 @@ def statistical_prediction(weather_info):
         autumn = power_row.iloc[0]['秋季'] if not power_row.empty else "23.00%"
         winter = power_row.iloc[0]['冬季'] if not power_row.empty else "23.00%"
         
-        # 提取运行时间（无匹配时使用默认值）
-        runtime = runtime_row.iloc[0]['运行时间75%分位数'] if not runtime_row.empty else "0.00"
-        
-        result.append({
+        # 构建基础结果
+        row_data = {
             "时段": peak,
             "天气": current_weather,
             "春季电量消耗": spring,
             "夏季电量消耗": summer,
             "秋季电量消耗": autumn,
-            "冬季电量消耗": winter,
-            "运行时间75%分位数": runtime
-        })
+            "冬季电量消耗": winter
+        }
+        
+        # 如果运行时间数据存在，添加运行时间列
+        if runtime_df is not None:
+            matched_runtime = runtime_df[runtime_df['天气'] == current_weather].copy()
+            runtime_row = matched_runtime[matched_runtime['时段'] == peak]
+            runtime = runtime_row.iloc[0]['运行时间75%分位数'] if not runtime_row.empty else "0.00"
+            row_data["运行时间75%分位数"] = runtime
+        
+        result.append(row_data)
     
     return pd.DataFrame(result)
 
@@ -408,7 +416,7 @@ if page == "📅 今日调度":
     with row2_col2:
         st.metric("目标值", f"{st.session_state.current_objective:.2f}")
 
-# -------------------------- ✅ 更新：数据管理页面显示两个文件 --------------------------
+# -------------------------- 数据管理页面 --------------------------
 elif page == "📊 数据管理":
     st.header("📊 数据管理", divider="blue")
     
@@ -423,16 +431,19 @@ elif page == "📊 数据管理":
     
     st.divider()
     
-    st.subheader("运行时间75%分为数数据状态")
+    st.subheader("运行时间75%分位数数据状态")
     try:
         runtime_df = load_runtime_data()
-        st.success("✅ 成功加载 data/运行时间75%分为数.csv")
-        st.dataframe(runtime_df, use_container_width=True)
+        if runtime_df is not None:
+            st.success("✅ 成功加载 data/运行时间75%分位数.csv")
+            st.dataframe(runtime_df, use_container_width=True)
+        else:
+            st.error("❌ 未找到 data/运行时间75%分位数.csv")
+            st.info("CSV格式要求：时段,天气,运行时间75%分位数")
     except Exception as e:
-        st.error("❌ 未找到 data/运行时间75%分为数.csv")
-        st.info("CSV格式要求：时段,天气,运行时间75%分位数")
+        st.error(f"❌ 加载失败：{str(e)}")
 
-# -------------------------- ✅ 更新：统计预测结果显示合并表格 --------------------------
+# -------------------------- 统计预测结果页面 --------------------------
 elif page == "📊 统计预测结果":
     st.header("📊 电量消耗与运行时间统计预测结果", divider="blue")
     
@@ -440,7 +451,7 @@ elif page == "📊 统计预测结果":
         st.info("请先在「今日调度」页面点击「运行统计预测」")
     else:
         st.subheader(f"当日天气：{st.session_state.weather_data['weather']}")
-        # 显示合并后的7列结果
+        # 显示合并后的结果
         st.dataframe(st.session_state.power_prediction_table, use_container_width=True, height=250)
         
         # 下载合并后的CSV
