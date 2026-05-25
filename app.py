@@ -41,36 +41,43 @@ footer {visibility: hidden;}
     border-radius: 10px;
     border-left: 4px solid #1f77b4;
 }
-.stProgress > div > div {
-    background-color: #1f77b4;
-    border-radius: 10px;
-}
 h1, h2, h3 {
     color: #2c3e50;
     font-weight: 600;
 }
 
-/* ✅ 彻底修复：进度文字不再被蓝色条覆盖 */
+/* ✅ 彻底移除进度文字的蓝色覆盖，同时加粗文字 */
 .stProgress {
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
+/* 文字部分：完全透明背景+加粗 */
 .stProgress > div:first-child {
     position: static !important;
     background: transparent !important;
+    background-color: transparent !important;
     height: auto !important;
     color: #2c3e50 !important;
     font-size: 16px !important;
-    font-weight: 500 !important;
+    font-weight: 700 !important; /* 加粗 */
     padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
 }
+/* 进度条部分：正常显示 */
 .stProgress > div:last-child {
     height: 12px !important;
     margin: 0 !important;
+    background-color: #e9ecef !important;
+}
+.stProgress > div:last-child > div {
+    background-color: #1f77b4 !important;
+    border-radius: 10px !important;
 }
 
-/* ✅ 优化metric字体大小，确保完整显示 */
+/* 优化metric字体大小 */
 .stMetric [data-testid="stMetricValue"] {
     font-size: 1.7rem !important;
     font-weight: 600 !important;
@@ -121,7 +128,7 @@ def get_weather_forecast(date):
     WEATHER_API_KEY = "e088a35c897818780a479973d4623063"
     try:
         city_code = "110000"
-        url = f"https://restapi.amap.com/v3/weather/weatherInfo?city={city_code}&key={WEATHER_API_KEY}&extensions=all"
+        url = f"https://restapi.amap.com/v3/weather/Info?city={city_code}&key={WEATHER_API_KEY}&extensions=all"
         response = requests.get(url, timeout=10)
         data = response.json()
         if data.get("status") != "1":
@@ -366,7 +373,7 @@ if page == "📅 今日调度":
     st.progress(st.session_state.progress / 100, text=f"进度 {st.session_state.progress}%")
     st.divider()
 
-    # ✅ 重新排版为两行：第一行3个，第二行2个
+    # 两行布局
     row1_col1, row1_col2, row1_col3 = st.columns(3, gap="medium")
     with row1_col1:
         st.metric("当前阶段", st.session_state.current_stage)
