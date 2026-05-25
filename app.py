@@ -91,6 +91,15 @@ if 'convergence_data' not in st.session_state:
     st.session_state.convergence_data = []
 if 'solve_log' not in st.session_state:
     st.session_state.solve_log = []
+# ✅ 新增：统计预测数据存储
+if 'power_consumption_data' not in st.session_state:
+    st.session_state.power_consumption_data = None
+if 'runtime_data' not in st.session_state:
+    st.session_state.runtime_data = None
+if 'power_prediction' not in st.session_state:
+    st.session_state.power_prediction = None
+if 'runtime_prediction' not in st.session_state:
+    st.session_state.runtime_prediction = None
 
 # -------------------------- 工具函数 --------------------------
 def add_log(message):
@@ -150,7 +159,7 @@ def load_ai_models():
         return None, None, None, None, "未找到预训练模型，将使用默认预测数据"
 
 def predict_passenger_flow(date, line_id, is_workday, weather_data):
-    """真实AI客流预测"""
+    """客流预测（保留原逻辑）"""
     model, scaler, pca_flow, pca_congestion, error = load_ai_models()
     
     hours = list(range(6, 22))
@@ -192,8 +201,70 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
     
     return hours, predictions
 
+# ✅ 修改：从GitHub的date文件夹读取CSV文件进行统计预测
+@st.cache_resource
+def load_statistical_data():
+    """从date文件夹加载统计数据（只加载一次）"""
+    power_data = None
+    runtime_data = None
+    
+    try:
+        # 读取电量消耗数据
+        power_data = pd.read_csv("date/电量消耗.csv")
+        add_log("✅ 成功加载date/电量消耗.csv")
+    except Exception as e:
+        add_log(f"⚠️ 未找到date/电量消耗.csv，将使用默认值：{str(e)}")
+    
+    try:
+        # 读取运行时间数据
+        runtime_data = pd.read_csv("date/运行时间.csv")
+        add_log("✅ 成功加载date/运行时间.csv")
+    except Exception as e:
+        add_log(f"⚠️ 未找到date/运行时间.csv，将使用默认值：{str(e)}")
+    
+    return power_data, runtime_data
+
+def statistical_prediction(weather_info):
+    """基于date文件夹的CSV文件进行统计预测"""
+    hours = list(range(6, 22))
+    current_weather = weather_info['weather']
+    
+    # 加载统计数据（只加载一次）
+    power_df, runtime_df = load_statistical_data()
+    
+    # 电量消耗预测
+    power_pred = []
+    if power_df is not None:
+        for hour in hours:
+            time_str = f"{hour}:00"
+            # 精确匹配时段和天气
+            match_row = power_df[(power_df['时段'] == time_str) & (power_df['天气'] == current_weather)]
+            if not match_row.empty:
+                power_pred.append(float(match_row.iloc[0]['电量消耗']))
+            else:
+                # 无匹配时使用默认值
+                power_pred.append(10.0)
+    else:
+        # 未找到文件时使用默认值
+        power_pred = [10.0] * len(hours)
+    
+    # 运行时间预测
+    runtime_pred = []
+    if runtime_df is not None:
+        for hour in hours:
+            time_str = f"{hour}:00"
+            match_row = runtime_df[(runtime_df['时段'] == time_str) & (runtime_df['天气'] == current_weather)]
+            if not match_row.empty:
+                runtime_pred.append(float(match_row.iloc[0]['运行时间']))
+            else:
+                runtime_pred.append(45.0)
+    else:
+        runtime_pred = [45.0] * len(hours)
+    
+    return power_pred, runtime_pred
+
 def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_limit):
-    """Gurobi真实优化求解"""
+    """Gurobi真实优化求解（原逻辑完全保留）"""
     add_log("开始初始化优化模型")
     
     st.session_state.convergence_data = []
@@ -282,7 +353,7 @@ st.sidebar.markdown("""
 st.sidebar.divider()
 page = st.sidebar.radio(
     "功能模块",
-    ["📅 今日调度", "📊 数据管理", "🤖 AI预测结果", "⚙️ 优化求解", "📋 排班结果"]
+    ["📅 今日调度", "📊 数据管理", "📊 统计预测结果", "⚙️ 优化求解", "📋 排班结果"]
 )
 st.sidebar.divider()
 st.sidebar.info("AI预测-优化建模 智能公交调度")
@@ -342,34 +413,41 @@ if page == "📅 今日调度":
                 st.session_state.progress = 30
 
     with btn3:
-        if st.button("运行AI预测"):
+        if st.button("运行统计预测"):
             if st.session_state.weather_data is None:
                 st.warning("⚠️ 请先读取天气数据")
             else:
-                st.info("🔄 AI客流预测中...")
+                st.info("🔄 统计预测中...")
                 progress_bar = st.progress(0)
                 
                 is_workday = 1 if timetable_type == "工作日" else 0
+                # 1. 保留原客流预测
                 hours, predictions = predict_passenger_flow(
                     dispatch_date, line, is_workday, st.session_state.weather_data
                 )
+                # 2. 统计预测电量消耗和运行时间（从date文件夹读取）
+                power_pred, runtime_pred = statistical_prediction(st.session_state.weather_data)
                 
+                # 更新进度条
                 for i in range(30, 60):
                     progress_bar.progress(i/100)
                     time.sleep(0.02)
                 
+                # 保存所有预测结果
                 st.session_state.predictions = predictions
                 st.session_state.prediction_hours = hours
+                st.session_state.power_prediction = power_pred
+                st.session_state.runtime_prediction = runtime_pred
                 
-                st.success("✅ AI预测完成！")
-                st.session_state.current_stage = "AI预测完成"
+                st.success("✅ 统计预测完成！")
+                st.session_state.current_stage = "统计预测完成"
                 st.session_state.progress = 60
-                add_log(f"AI客流预测完成，共预测{len(hours)}个时段")
+                add_log(f"统计预测完成，共预测{len(hours)}个时段")
 
     with btn4:
         if st.button("开始优化求解"):
             if st.session_state.predictions is None:
-                st.warning("⚠️ 请先运行AI预测")
+                st.warning("⚠️ 请先运行统计预测")
             else:
                 st.info("🔄 优化求解中...")
                 progress_bar = st.progress(0)
@@ -459,44 +537,97 @@ elif page == "📊 数据管理":
         st.info("请先在「今日调度」页面读取班次表")
 
     st.divider()
-    st.subheader("上传新数据")
-    uploaded_file = st.file_uploader("选择CSV文件", type="csv")
-    if uploaded_file is not None:
-        st.session_state.timetable_data = pd.read_csv(uploaded_file)
-        st.success("✅ 数据上传成功！")
-        st.dataframe(st.session_state.timetable_data, use_container_width=True)
+    st.subheader("统计数据状态")
+    st.info("统计数据自动从GitHub仓库的`date`文件夹读取")
+    
+    # 显示统计数据加载状态
+    power_df, runtime_df = load_statistical_data()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if power_df is not None:
+            st.success("✅ 电量消耗数据已加载")
+            st.dataframe(power_df, use_container_width=True)
+        else:
+            st.error("❌ 未找到date/电量消耗.csv")
+    
+    with col2:
+        if runtime_df is not None:
+            st.success("✅ 运行时间数据已加载")
+            st.dataframe(runtime_df, use_container_width=True)
+        else:
+            st.error("❌ 未找到date/运行时间.csv")
 
-# -------------------------- 页面3：AI预测结果 --------------------------
-elif page == "🤖 AI预测结果":
-    st.header("🤖 AI客流预测结果", divider="blue")
+# -------------------------- 页面3：统计预测结果 --------------------------
+elif page == "📊 统计预测结果":
+    st.header("📊 统计预测结果", divider="blue")
     st.divider()
     
     if 'predictions' not in st.session_state or st.session_state.predictions is None:
-        st.info("请先在「今日调度」页面点击「运行AI预测」")
+        st.info("请先在「今日调度」页面点击「运行统计预测」")
     else:
+        # 1. 客流预测曲线
         st.subheader(f"{line}线路 {dispatch_date.strftime('%Y-%m-%d')} 客流预测曲线")
-        
-        chart_data = pd.DataFrame({
+        flow_chart_data = pd.DataFrame({
             "时间": [f"{h}:00" for h in st.session_state.prediction_hours],
             "预测客流": st.session_state.predictions
         })
-        st.line_chart(chart_data, x="时间", y="预测客流", use_container_width=True)
+        st.line_chart(flow_chart_data, x="时间", y="预测客流", use_container_width=True, color="#1f77b4")
         
         st.divider()
         
-        st.subheader("预测结果统计")
+        # 2. 电量消耗预测曲线
+        st.subheader(f"{line}线路 {dispatch_date.strftime('%Y-%m-%d')} 电量消耗预测曲线")
+        power_chart_data = pd.DataFrame({
+            "时间": [f"{h}:00" for h in st.session_state.prediction_hours],
+            "预测电量消耗(%)": st.session_state.power_prediction
+        })
+        st.line_chart(power_chart_data, x="时间", y="预测电量消耗(%)", use_container_width=True, color="#ff7f0e")
+        
+        st.divider()
+        
+        # 3. 运行时间预测曲线
+        st.subheader(f"{line}线路 {dispatch_date.strftime('%Y-%m-%d')} 运行时间预测曲线")
+        runtime_chart_data = pd.DataFrame({
+            "时间": [f"{h}:00" for h in st.session_state.prediction_hours],
+            "预测运行时间(分钟)": st.session_state.runtime_prediction
+        })
+        st.line_chart(runtime_chart_data, x="时间", y="预测运行时间(分钟)", use_container_width=True, color="#2ca02c")
+        
+        st.divider()
+        
+        # 4. 预测结果统计
+        st.subheader("预测结果统计汇总")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            morning_peak = max(st.session_state.predictions[1:4])
+            morning_peak = max(st.session_state.predictions[1:4])  # 7-9点
             st.metric("早高峰最大客流", f"{morning_peak}人")
         with col2:
-            evening_peak = max(st.session_state.predictions[11:14])
-            st.metric("晚高峰最大客流", f"{evening_peak}人")
+            total_power = round(sum(st.session_state.power_prediction), 1)
+            st.metric("总电量消耗", f"{total_power}%")
         with col3:
-            total_flow = sum(st.session_state.predictions)
-            st.metric("日均总客流", f"{total_flow}人")
+            avg_runtime = round(np.mean(st.session_state.runtime_prediction), 1)
+            st.metric("平均运行时间", f"{avg_runtime}分钟")
         with col4:
-            st.metric("预测置信水平", confidence)
+            st.metric("当日预测天气", st.session_state.weather_data['weather'])
+
+        # 导出所有预测结果
+        st.divider()
+        if st.button("📥 导出全部预测结果"):
+            all_pred_data = pd.DataFrame({
+                "时段": [f"{h}:00" for h in st.session_state.prediction_hours],
+                "天气": [st.session_state.weather_data['weather']]*len(st.session_state.prediction_hours),
+                "预测客流": st.session_state.predictions,
+                "预测电量消耗(%)": st.session_state.power_prediction,
+                "预测运行时间(分钟)": st.session_state.runtime_prediction
+            })
+            csv_data = all_pred_data.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button(
+                label="点击下载完整预测表",
+                data=csv_data,
+                file_name=f"统计预测结果_{dispatch_date.strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
 
 # -------------------------- 页面4：优化求解 --------------------------
 elif page == "⚙️ 优化求解":
