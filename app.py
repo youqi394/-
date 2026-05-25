@@ -82,12 +82,8 @@ if 'solve_log' not in st.session_state:
     st.session_state.solve_log = []
 if 'power_consumption_data' not in st.session_state:
     st.session_state.power_consumption_data = None
-# if 'runtime_data' not in st.session_state:
-#     st.session_state.runtime_data = None
-if 'power_prediction' not in st.session_state:
-    st.session_state.power_prediction = None
-# if 'runtime_prediction' not in st.session_state:
-#     st.session_state.runtime_prediction = None
+if 'power_prediction_table' not in st.session_state:
+    st.session_state.power_prediction_table = None
 
 # -------------------------- 工具函数 --------------------------
 def add_log(message):
@@ -119,59 +115,74 @@ def get_weather_forecast(date):
     except:
         return {"date": date, "temp_max": 25, "temp_min": 18, "weather": "晴", "is_rain": 0}, None
 
-# -------------------------- 统计预测：只启用电量，运行时间已注释 --------------------------
+# -------------------------- ✅ 完美适配你的CSV格式 --------------------------
 @st.cache_resource
-def load_statistical_data():
-    power_data = None
-    # runtime_data = None
+def load_power_data():
+    """从GitHub data文件夹加载电量消耗CSV，自动处理百分号"""
     try:
-        power_data = pd.read_csv("data/电量消耗.csv")
-        add_log("✅ 成功加载 data/电量消耗.csv")
+        power_df = pd.read_csv("data/电量消耗.csv")
+        # 自动处理电量消耗列的百分号，转换为浮点数
+        power_df['电量消耗'] = power_df['电量消耗'].str.replace('%', '').astype(float)
+        add_log("✅ 成功加载 data/电量消耗.csv，共{}条记录".format(len(power_df)))
+        return power_df
     except Exception as e:
-        add_log(f"⚠️ 未找到 data/电量消耗.csv")
+        add_log(f"⚠️ 未找到 data/电量消耗.csv：{str(e)}")
+        return None
 
-    # try:
-    #     runtime_data = pd.read_csv("data/运行时间.csv")
-    #     add_log("✅ 成功加载 data/运行时间.csv")
-    # except Exception as e:
-    #     add_log(f"⚠️ 未找到 data/运行时间.csv")
-
-    return power_data  # , runtime_data
+def get_peak_type(hour):
+    """自动根据小时判断峰段类型，与你的CSV完全对应"""
+    if 7 <= hour < 9:
+        return "早高峰"
+    elif 17 <= hour < 19:
+        return "晚高峰"
+    elif (6 <= hour <7) or (9 <= hour <17) or (19 <= hour <21):
+        return "平峰"
+    elif 21 <= hour <22:
+        return "低峰"
+    else:
+        return "平峰"
 
 def statistical_prediction(weather_info):
+    """
+    统计预测逻辑（完美匹配你的CSV）：
+    1. 遍历6:00-21:00所有时段
+    2. 自动判断每个时段的峰段（早高峰/晚高峰/平峰/低峰）
+    3. 用【时段+天气】双重匹配电量消耗
+    4. 返回完整预测表格
+    """
     hours = list(range(6, 22))
     current_weather = weather_info['weather']
-    power_df = load_statistical_data()  # , runtime_df
-
-    # 电量消耗预测（正常运行）
-    power_pred = []
-    if power_df is not None:
-        for hour in hours:
-            time_str = f"{hour}:00"
-            match_row = power_df[(power_df['时段'] == time_str) & (power_df['天气'] == current_weather)]
+    power_df = load_power_data()
+    
+    prediction_result = []
+    
+    for hour in hours:
+        peak_type = get_peak_type(hour)
+        time_str = f"{hour}:00"
+        
+        # 双重匹配：时段（峰段） + 天气
+        if power_df is not None:
+            match_row = power_df[
+                (power_df['时段'] == peak_type) & 
+                (power_df['天气'] == current_weather)
+            ]
             if not match_row.empty:
-                power_pred.append(float(match_row.iloc[0]['电量消耗']))
+                power_consumption = float(match_row.iloc[0]['电量消耗'])
             else:
-                power_pred.append(10.0)
-    else:
-        power_pred = [10.0] * len(hours)
+                power_consumption = 23.0  # 无匹配时默认值
+        else:
+            power_consumption = 23.0  # 无文件时默认值
+        
+        prediction_result.append({
+            "时段": time_str,
+            "峰段类型": peak_type,
+            "当日天气": current_weather,
+            "预测电量消耗(%)": power_consumption
+        })
+    
+    return pd.DataFrame(prediction_result)
 
-    # 运行时间预测（已全部注释，不运行）
-    # runtime_pred = []
-    # if runtime_df is not None:
-    #     for hour in hours:
-    #         time_str = f"{hour}:00"
-    #         match_row = runtime_df[(runtime_df['时段'] == time_str) & (runtime_df['天气'] == current_weather)]
-    #         if not match_row.empty:
-    #             runtime_pred.append(float(match_row.iloc[0]['运行时间']))
-    #         else:
-    #             runtime_pred.append(45.0)
-    # else:
-    #     runtime_pred = [45.0] * len(hours)
-
-    return power_pred  # , runtime_pred
-
-# -------------------------- 客流预测 --------------------------
+# -------------------------- 客流预测（保留原逻辑） --------------------------
 def predict_passenger_flow(date, line_id, is_workday, weather_data):
     hours = list(range(6, 22))
     base_flow = 150 if is_workday else 100
@@ -189,7 +200,7 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
         predictions.append(round(flow * (0.9 + np.random.random() * 0.2)))
     return hours, predictions
 
-# -------------------------- 优化求解 --------------------------
+# -------------------------- 优化求解（保留原逻辑） --------------------------
 def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_limit):
     add_log("开始初始化优化模型")
     st.session_state.convergence_data = []
@@ -288,7 +299,7 @@ if page == "📅 今日调度":
         if st.button("读取天气"):
             weather_info, err = get_weather_forecast(dispatch_date)
             st.session_state.weather_data = weather_info
-            st.success(f"✅ 天气：{weather_info['weather']}")
+            st.success(f"✅ 天气：{weather_info['weather']} {weather_info['temp_min']}~{weather_info['temp_max']}℃")
             st.session_state.progress = 30
             st.session_state.current_stage = "天气已加载"
 
@@ -299,13 +310,14 @@ if page == "📅 今日调度":
             else:
                 st.info("🔄 统计预测中...")
                 is_workday = 1 if timetable_type == "工作日" else 0
+                # 1. 客流预测
                 hours, preds = predict_passenger_flow(dispatch_date, line, is_workday, st.session_state.weather_data)
-                power_pred = statistical_prediction(st.session_state.weather_data)
+                # 2. 电量消耗预测（完美匹配你的CSV）
+                power_table = statistical_prediction(st.session_state.weather_data)
                 
                 st.session_state.predictions = preds
                 st.session_state.prediction_hours = hours
-                st.session_state.power_prediction = power_pred
-                # st.session_state.runtime_prediction = runtime_pred
+                st.session_state.power_prediction_table = power_table
                 
                 st.session_state.progress = 60
                 st.session_state.current_stage = "统计预测完成"
@@ -347,27 +359,47 @@ if page == "📅 今日调度":
 # -------------------------- 数据管理 --------------------------
 elif page == "📊 数据管理":
     st.header("📊 数据管理", divider="blue")
-    st.subheader("统计数据状态（从 data 文件夹读取）")
-    p = load_statistical_data()  # , r
-    c1,c2 = st.columns(2)
-    c1.success("✅ 电量消耗.csv 已加载") if p is not None else c1.error("❌ 未找到 data/电量消耗.csv")
-    # c2.success("✅ 运行时间.csv 已加载") if r is not None else c2.error("❌ 未找到 data/运行时间.csv")
-
-# -------------------------- 统计预测结果 --------------------------
-elif page == "📊 统计预测结果":
-    st.header("📊 统计预测结果", divider="blue")
-    if st.session_state.predictions is None:
-        st.info("请先运行统计预测")
+    st.subheader("电量消耗数据状态")
+    power_df = load_power_data()
+    
+    if power_df is not None:
+        st.success("✅ 成功加载 data/电量消耗.csv")
+        st.dataframe(power_df, use_container_width=True)
     else:
-        t = [f"{h}:00" for h in st.session_state.prediction_hours]
-        st.subheader("客流预测")
-        st.line_chart(pd.DataFrame({"时间":t,"客流":st.session_state.predictions}),x="时间",y="客流")
+        st.error("❌ 未找到 data/电量消耗.csv")
+        st.info("请确保GitHub仓库根目录有data文件夹，且里面有电量消耗.csv文件")
+        st.info("你的CSV格式已确认：三列，列名必须为 `时段,天气,电量消耗`")
+
+# -------------------------- 统计预测结果（表格输出） --------------------------
+elif page == "📊 统计预测结果":
+    st.header("📊 电量消耗统计预测结果", divider="blue")
+    
+    if st.session_state.power_prediction_table is None:
+        st.info("请先在「今日调度」页面点击「运行统计预测」")
+    else:
+        st.subheader(f"当日天气：{st.session_state.weather_data['weather']}")
+        st.dataframe(st.session_state.power_prediction_table, use_container_width=True, height=600)
         
-        st.subheader("电量消耗预测 %")
-        st.line_chart(pd.DataFrame({"时间":t,"电量消耗":st.session_state.power_prediction}),x="时间",y="电量消耗")
+        # 下载按钮
+        csv_data = st.session_state.power_prediction_table.to_csv(index=False, encoding='utf-8-sig')
+        st.download_button(
+            label="📥 下载电量消耗预测表",
+            data=csv_data,
+            file_name=f"电量消耗预测_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
         
-        # st.subheader("运行时间预测 分钟")
-        # st.line_chart(pd.DataFrame({"时间":t,"运行时间":st.session_state.runtime_prediction}),x="时间",y="运行时间")
+        # 统计汇总
+        st.divider()
+        st.subheader("预测结果汇总")
+        total_power = round(st.session_state.power_prediction_table["预测电量消耗(%)"].sum(), 2)
+        avg_power = round(st.session_state.power_prediction_table["预测电量消耗(%)"].mean(), 2)
+        max_power = round(st.session_state.power_prediction_table["预测电量消耗(%)"].max(), 2)
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("总电量消耗", f"{total_power}%")
+        col2.metric("平均每小时电量消耗", f"{avg_power}%")
+        col3.metric("最大单小时电量消耗", f"{max_power}%")
 
 # -------------------------- 优化求解 --------------------------
 elif page == "⚙️ 优化求解":
