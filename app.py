@@ -125,6 +125,27 @@ def normalize_column_name(name):
     """标准化列名：移除所有空格、括号、特殊字符，转为小写"""
     return re.sub(r'[\s()%]', '', str(name)).lower()
 
+def get_season(date):
+    """自动判断季节：夏季(6-8月)、冬季(12-2月)、其他(全年)"""
+    month = date.month
+    if 6 <= month <= 8:
+        return "summer"
+    elif month == 12 or month <= 2:
+        return "winter"
+    else:
+        return "annual"
+
+def get_time_period(hour):
+    """将0-24小时映射到四个时段"""
+    if 7 <= hour <= 9:
+        return "早高峰"
+    elif 17 <= hour <= 19:
+        return "晚高峰"
+    elif (6 <= hour <= 6) or (10 <= hour <= 16) or (20 <= hour <= 21):
+        return "平峰"
+    else: # 0-5, 22-23
+        return "低峰"
+
 # -------------------------- 天气获取 --------------------------
 def get_weather_forecast(date):
     WEATHER_API_KEY = "e088a35c897818780a479973d4623063"
@@ -150,7 +171,44 @@ def get_weather_forecast(date):
     except:
         return {"date": date, "temp_max": 25, "temp_min": 18, "weather": "晴", "is_rain": 0}, None
 
-# -------------------------- ✅ 终极修复：自动匹配运行时间列名 --------------------------
+# -------------------------- ✅ 新增：加载碳排放数据 --------------------------
+@st.cache_resource
+def load_carbon_data():
+    """从data文件夹加载碳排放CSV，格式：hour,annual,summer,winter"""
+    try:
+        carbon_df = pd.read_csv("data/碳排放.csv", dtype=str, encoding='utf-8')
+    except:
+        try:
+            carbon_df = pd.read_csv("data/碳排放.csv", dtype=str, encoding='gbk')
+        except Exception as e:
+            add_log(f"⚠️ 未找到碳排放文件：{str(e)}")
+            return None, f"文件不存在或无法读取：{str(e)}"
+    
+    # 清洗列名
+    carbon_df.columns = carbon_df.columns.str.strip()
+    carbon_df = carbon_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+    
+    # 转换数值类型
+    for col in ['hour', 'annual', 'summer', 'winter']:
+        carbon_df[col] = pd.to_numeric(carbon_df[col], errors='coerce')
+    
+    # 显示实际列名用于调试
+    actual_columns = list(carbon_df.columns)
+    add_log(f"📌 碳排放文件实际列名：{actual_columns}")
+    
+    # 检查必需列
+    required_columns = ["hour", "annual", "summer", "winter"]
+    missing_columns = [col for col in required_columns if col not in carbon_df.columns]
+    
+    if missing_columns:
+        error_msg = f"无法自动匹配列名。实际列名：{actual_columns}"
+        add_log(f"❌ {error_msg}")
+        return None, error_msg
+    
+    add_log(f"✅ 成功加载 data/碳排放.csv，共{len(carbon_df)}条记录")
+    return carbon_df, None
+
+# -------------------------- 运行时间加载 --------------------------
 @st.cache_resource
 def load_runtime_data():
     """从data文件夹加载运行时间CSV，自动匹配列名"""
@@ -194,7 +252,7 @@ def load_runtime_data():
     add_log(f"✅ 成功加载 data/运行时间75%分位数.csv，共{len(runtime_df)}条记录")
     return runtime_df, None
 
-# -------------------------- ✅ 自动匹配电量消耗列名 --------------------------
+# -------------------------- 电量消耗加载 --------------------------
 @st.cache_resource
 def load_power_data():
     """从data文件夹加载四季电量消耗CSV，自动匹配列名"""
@@ -253,19 +311,42 @@ def load_power_data():
     add_log(f"✅ 成功加载 data/电量消耗.csv，共{len(power_df)}条记录")
     return power_df, None
 
-# -------------------------- ✅ 统计预测逻辑 --------------------------
+# -------------------------- ✅ 更新：统计预测逻辑（加入碳排放） --------------------------
 def statistical_prediction(weather_info):
     """
     统计预测逻辑：
-    1. 获取当日天气
+    1. 获取当日天气和季节
     2. 筛选电量消耗CSV中对应天气和时段的行
     3. 筛选运行时间CSV中对应天气的行（所有时段共用同一个运行时间）
-    4. 按时段合并两个数据集
-    5. 按早高峰→晚高峰→平峰→低峰排序
+    4. 计算对应季节的分时段碳排放值
+    5. 按时段合并三个数据集
+    6. 按早高峰→晚高峰→平峰→低峰排序
     """
     current_weather = weather_info['weather']
+    current_date = weather_info['date']
+    current_season = get_season(current_date)
+    
+    season_name_map = {"summer": "夏季", "winter": "冬季", "annual": "全年"}
+    add_log(f"✅ 自动判断季节：{season_name_map[current_season]}")
+    
     power_df, power_error = load_power_data()
     runtime_df, runtime_error = load_runtime_data()
+    carbon_df, carbon_error = load_carbon_data()
+    
+    # 计算分时段碳排放
+    carbon_by_period = {"早高峰": 0.0, "晚高峰": 0.0, "平峰": 0.0, "低峰": 0.0}
+    if carbon_df is not None:
+        # 按时段分组计算平均值
+        carbon_df['时段'] = carbon_df['hour'].apply(get_time_period)
+        carbon_avg = carbon_df.groupby('时段')[current_season].mean().round(4)
+        
+        for period in carbon_by_period.keys():
+            if period in carbon_avg.index:
+                carbon_by_period[period] = carbon_avg[period]
+            else:
+                carbon_by_period[period] = 0.0
+        
+        add_log(f"✅ 计算完成{season_name_map[current_season]}分时段碳排放")
     
     # 如果电量数据加载失败，返回默认值
     if power_df is None:
@@ -279,7 +360,8 @@ def statistical_prediction(weather_info):
                 "春季电量消耗": "23.00%",
                 "夏季电量消耗": "23.00%",
                 "秋季电量消耗": "23.00%",
-                "冬季电量消耗": "23.00%"
+                "冬季电量消耗": "23.00%",
+                f"{season_name_map[current_season]}碳排放": f"{carbon_by_period[peak]:.4f}"
             }
             if runtime_df is not None:
                 row_data["75%运行时间 (min)"] = "0.00"
@@ -318,7 +400,8 @@ def statistical_prediction(weather_info):
             "春季电量消耗": spring,
             "夏季电量消耗": summer,
             "秋季电量消耗": autumn,
-            "冬季电量消耗": winter
+            "冬季电量消耗": winter,
+            f"{season_name_map[current_season]}碳排放": f"{carbon_by_period[peak]:.4f}"
         }
         
         # 添加运行时间（所有时段同一个值）
@@ -459,7 +542,7 @@ if page == "📅 今日调度":
                 is_workday = 1 if timetable_type == "工作日" else 0
                 # 1. 客流预测
                 hours, preds = predict_passenger_flow(dispatch_date, line, is_workday, st.session_state.weather_data)
-                # 2. 电量+运行时间联合预测
+                # 2. 电量+运行时间+碳排放联合预测
                 power_table = statistical_prediction(st.session_state.weather_data)
                 
                 st.session_state.predictions = preds
@@ -514,7 +597,7 @@ if page == "📅 今日调度":
     with row2_col2:
         st.metric("目标值", f"{st.session_state.current_objective:.2f}")
 
-# -------------------------- 数据管理页面（显示详细调试信息） --------------------------
+# -------------------------- ✅ 更新：数据管理页面（加入碳排放） --------------------------
 elif page == "📊 数据管理":
     st.header("📊 数据管理", divider="blue")
     
@@ -543,17 +626,34 @@ elif page == "📊 数据管理":
             st.info("CSV格式要求：天气,75%运行时间 (min)")
     except Exception as e:
         st.error(f"❌ 加载失败：{str(e)}")
+    
+    st.divider()
+    
+    st.subheader("碳排放数据状态")
+    try:
+        carbon_df, carbon_error = load_carbon_data()
+        if carbon_df is not None:
+            st.success("✅ 成功加载 data/碳排放.csv")
+            st.dataframe(carbon_df, use_container_width=True)
+        else:
+            st.error(f"❌ 碳排放数据加载失败：{carbon_error}")
+            st.info("CSV格式要求：hour,annual,summer,winter")
+    except Exception as e:
+        st.error(f"❌ 加载失败：{str(e)}")
 
-# -------------------------- 统计预测结果页面 --------------------------
+# -------------------------- ✅ 更新：统计预测结果页面（显示碳排放） --------------------------
 elif page == "📊 统计预测结果":
-    st.header("📊 电量消耗与运行时间统计预测结果", divider="blue")
+    st.header("📊 电量消耗、运行时间与碳排放统计预测结果", divider="blue")
     
     if st.session_state.power_prediction_table is None:
         st.info("请先在「今日调度」页面点击「运行统计预测」")
     else:
-        st.subheader(f"当日天气：{st.session_state.weather_data['weather']}")
-        # 显示合并后的结果
-        st.dataframe(st.session_state.power_prediction_table, use_container_width=True, height=250)
+        current_season = get_season(st.session_state.weather_data['date'])
+        season_name_map = {"summer": "夏季", "winter": "冬季", "annual": "全年"}
+        
+        st.subheader(f"当日天气：{st.session_state.weather_data['weather']} | 当前季节：{season_name_map[current_season]}")
+        # 显示合并后的结果（包含碳排放）
+        st.dataframe(st.session_state.power_prediction_table, use_container_width=True, height=280)
         
         # 下载合并后的CSV
         csv_data = st.session_state.power_prediction_table.to_csv(index=False, encoding='utf-8-sig')
