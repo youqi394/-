@@ -6,7 +6,7 @@ import time
 import requests
 import gurobipy as gp
 from gurobipy import GRB
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 
 # -------------------------- 全局配置 --------------------------
@@ -115,6 +115,8 @@ if 'solve_log' not in st.session_state:
     st.session_state.solve_log = []
 if 'power_prediction_table' not in st.session_state:
     st.session_state.power_prediction_table = None
+if 'weather_source' not in st.session_state:
+    st.session_state.weather_source = ""
 
 # -------------------------- 工具函数 --------------------------
 def add_log(message):
@@ -158,30 +160,106 @@ def get_time_period(hour):
     else: # 0-5, 22-23
         return "低峰"
 
+# -------------------------- ✅ 新增：根据班次类型读取对应时刻表 --------------------------
+@st.cache_resource
+def load_timetable_data(timetable_type):
+    """
+    根据选择的班次类型读取对应的时刻表文件
+    - 工作日：data/工作日发车时刻表.csv
+    - 节假日：data/节假日发车时刻表.csv
+    - 周末：默认使用工作日数据
+    """
+    # 映射班次类型到文件名
+    file_map = {
+        "工作日": "工作日发车时刻表.csv",
+        "周末": "工作日发车时刻表.csv",  # 周末暂时使用工作日数据
+        "节假日": "节假日发车时刻表.csv"
+    }
+    
+    filename = file_map.get(timetable_type, "工作日发车时刻表.csv")
+    file_path = f"data/{filename}"
+    
+    add_log(f"🔄 正在读取 {timetable_type} 时刻表：{file_path}")
+    
+    try:
+        df = pd.read_csv(file_path, dtype=str, encoding='utf-8')
+    except:
+        try:
+            df = pd.read_csv(file_path, dtype=str, encoding='gbk')
+        except Exception as e:
+            add_log(f"⚠️ 未找到 {timetable_type} 时刻表文件：{str(e)}")
+            return None, f"文件不存在或无法读取：{file_path}"
+    
+    # 清洗列名
+    df.columns = df.columns.str.strip()
+    df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+    
+    # 移除空行
+    df = df.dropna(how='all')
+    
+    add_log(f"✅ 成功加载 {timetable_type} 时刻表，共{len(df)}条记录")
+    add_log(f"📌 时刻表实际列名：{list(df.columns)}")
+    
+    return df, None
+
 # -------------------------- 天气获取 --------------------------
 def get_weather_forecast(date):
+    """
+    优化后的天气获取函数：
+    1. 未来3天内的日期：调用高德API获取真实预报
+    2. 今天及过去的日期：使用默认天气，但保留原日期用于季节判断
+    3. 无论哪种情况，都返回正确的date字段
+    """
     WEATHER_API_KEY = "e088a35c897818780a479973d4623063"
-    try:
-        city_code = "110000"
-        url = f"https://restapi.amap.com/v3/weather/weatherInfo?city={city_code}&key={WEATHER_API_KEY}&extensions=all"
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        if data.get("status") != "1":
-            return None, "API错误"
-        target = date.strftime("%Y-%m-%d")
-        for day in data["forecasts"][0]["casts"]:
-            if day["date"] == target:
-                weather_info = {
-                    "date": date,
-                    "temp_max": int(day["daytemp"]),
-                    "temp_min": int(day["nighttemp"]),
-                    "weather": day["dayweather"].strip(),
-                    "is_rain": 1 if "雨" in day["dayweather"] else 0
-                }
-                return weather_info, None
-        return None, "无天气数据"
-    except:
-        return {"date": date, "temp_max": 25, "temp_min": 18, "weather": "晴", "is_rain": 0}, None
+    today = datetime.now().date()
+    max_forecast_date = today + timedelta(days=3)
+    
+    # 判断日期是否在API支持的预报范围内（今天到未来3天）
+    is_in_forecast_range = (date >= today) and (date <= max_forecast_date)
+    
+    if is_in_forecast_range:
+        try:
+            city_code = "110000"
+            url = f"https://restapi.amap.com/v3/weather/weatherInfo?city={city_code}&key={WEATHER_API_KEY}&extensions=all"
+            response = requests.get(url, timeout=10)
+            data = response.json()
+            
+            if data.get("status") == "1":
+                target = date.strftime("%Y-%m-%d")
+                for day in data["forecasts"][0]["casts"]:
+                    if day["date"] == target:
+                        weather_info = {
+                            "date": date,
+                            "temp_max": int(day["daytemp"]),
+                            "temp_min": int(day["nighttemp"]),
+                            "weather": day["dayweather"].strip(),
+                            "is_rain": 1 if "雨" in day["dayweather"] else 0
+                        }
+                        st.session_state.weather_source = "高德API实时预报"
+                        add_log(f"✅ 从高德API获取到 {target} 的天气：{weather_info['weather']}")
+                        return weather_info, None
+                
+                # 如果API返回的预报里没有目标日期（理论上不会发生）
+                add_log(f"⚠️ 高德API未返回 {date.strftime('%Y-%m-%d')} 的预报数据")
+            else:
+                add_log(f"⚠️ 高德API调用失败：{data.get('info', '未知错误')}")
+        except Exception as e:
+            add_log(f"⚠️ 天气API调用异常：{str(e)}")
+    
+    # 不在预报范围内或API调用失败，使用默认天气，但保留原日期
+    st.session_state.weather_source = "默认天气（历史日期不支持API查询）"
+    add_log(f"ℹ️ {date.strftime('%Y-%m-%d')} 不在预报范围内，使用默认晴天数据")
+    
+    # 关键：返回的date是用户选择的日期，不是今天！
+    default_weather = {
+        "date": date,
+        "temp_max": 25,
+        "temp_min": 18,
+        "weather": "晴",
+        "is_rain": 0
+    }
+    
+    return default_weather, None
 
 # -------------------------- 加载碳排放数据 --------------------------
 @st.cache_resource
@@ -311,11 +389,11 @@ def load_power_data():
     add_log(f"✅ 成功加载 data/电量消耗.csv，共{len(power_df)}条记录")
     return power_df, None
 
-# -------------------------- ✅ 更新：24小时逐时统计预测逻辑 --------------------------
+# -------------------------- 24小时逐时统计预测逻辑 --------------------------
 def statistical_prediction(weather_info):
     """
     24小时逐时统计预测逻辑：
-    1. 获取当日天气、电量季节、碳排放季节
+    1. 获取当日天气、电量季节、碳排放季节（基于用户选择的调度日期）
     2. 筛选当日天气的电量消耗数据
     3. 获取当日天气的运行时间（所有小时共用）
     4. 遍历0-23每个小时：
@@ -327,7 +405,7 @@ def statistical_prediction(weather_info):
     current_weather = weather_info['weather']
     current_date = weather_info['date']
     
-    # 获取当前季节
+    # 获取当前季节（完全基于用户选择的日期，和天气来源无关）
     power_season = get_power_season(current_date)
     carbon_season = get_carbon_season(current_date)
     
@@ -491,14 +569,21 @@ if page == "📅 今日调度":
     with btn1:
         if st.button("读取班次表"):
             st.session_state.start_time = time.time()
-            try:
-                st.session_state.timetable_data = pd.read_csv("data/weekday.csv")
-                st.success("✅ 班次表读取成功")
-            except:
+            # ✅ 根据选择的班次类型读取对应文件
+            timetable_df, timetable_error = load_timetable_data(timetable_type)
+            
+            if timetable_df is not None:
+                st.session_state.timetable_data = timetable_df
+                st.success(f"✅ 成功读取 {timetable_type} 班次表，共{len(timetable_df)}条记录")
+            else:
+                # 文件不存在时使用示例数据
                 st.session_state.timetable_data = pd.DataFrame({
-                    "线路编号":["1路"]*10,"发车时间":[f"{6+i//2:02d}:{i%2*30:02d}"for i in range(10)],"车辆编号":[f"车{i%5+1:02d}"for i in range(10)]
+                    "线路编号":["1路"]*10,
+                    "发车时间":[f"{6+i//2:02d}:{i%2*30:02d}"for i in range(10)],
+                    "车辆编号":[f"车{i%5+1:02d}"for i in range(10)]
                 })
-                st.warning("⚠️ 使用示例班次数据")
+                st.warning(f"⚠️ 未找到 {timetable_type} 班次表，使用示例数据")
+            
             st.session_state.progress = 24
             st.session_state.current_stage = "班次已加载"
 
@@ -618,7 +703,7 @@ elif page == "📊 数据管理":
     except Exception as e:
         st.error(f"❌ 加载失败：{str(e)}")
 
-# -------------------------- ✅ 更新：24小时逐时统计预测结果页面 --------------------------
+# -------------------------- 统计预测结果页面 --------------------------
 elif page == "📊 统计预测结果":
     st.header("📊 24小时逐时统计预测结果", divider="blue")
     
