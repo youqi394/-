@@ -231,7 +231,7 @@ def load_timetable_data(timetable_type):
     # 映射班次类型到文件名
     file_map = {
         "工作日": "工作日发车时刻表.csv",
-        "周末": "工作日发车时刻表.csv",  # 周末暂时使用工作日数据
+        "周末": "节假日发车时刻表.csv",  
         "节假日": "节假日发车时刻表.csv"
     }
     
