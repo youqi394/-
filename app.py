@@ -12,7 +12,7 @@ import re
 # -------------------------- 全局配置 --------------------------
 st.set_page_config(
     page_title="智能公交调度系统",
-    page_icon="🚌",
+    
     layout="wide",
     initial_sidebar_state="expanded"
 )
