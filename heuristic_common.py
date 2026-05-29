@@ -15,14 +15,14 @@ DEFAULT_HOURLY = "电量消耗.csv"
 # -------------------------- 数据类定义 --------------------------
 @dataclass
 class Config:
-    """调度配置参数"""
+    """遗传算法配置参数"""
     charger_capacity: Dict[str, int]
     rest_minutes: float
     max_late_minutes: float
 
 @dataclass
 class Solution:
-    """算法解结构"""
+    """遗传算法解的结构"""
     feasible: bool
     objective: float
     vehicles_used: int
@@ -30,7 +30,7 @@ class Solution:
     relative_gap_to_lb: float
     runtime_sec: float = 0.0
     metadata: Dict[str, Any] = None
-    schedule: Optional[List[Dict[str, Any]]] = None
+    schedule: Optional[List[Dict[str, str]]] = None
 
     def __post_init__(self):
         if self.metadata is None:
@@ -38,12 +38,14 @@ class Solution:
         if self.schedule is None:
             self.schedule = []
 
-# -------------------------- 加载基础班次（原样保留） --------------------------
+# -------------------------- 加载实例函数 --------------------------
 def load_instance(
     data_dir: Path,
     schedule_file: str,
     hourly_file: str,
 ) -> Tuple[List[Dict[str, Any]], Dict[int, Dict[str, Any]]]:
+    """加载班次表和小时参数"""
+    # 加载班次表
     schedule_path = data_dir / schedule_file
     schedule_data = []
     try:
@@ -57,7 +59,8 @@ def load_instance(
                     "depart_hour": int(row.get("发车时间", "06:00").split(":")[0]),
                     "depart_minute": int(row.get("发车时间", "06:00").split(":")[1]),
                 })
-    except Exception:
+    except Exception as e:
+        # 兼容模式：如果文件不存在，生成示例数据
         for i in range(10):
             hour = 6 + i // 2
             minute = (i % 2) * 30
@@ -68,7 +71,8 @@ def load_instance(
                 "depart_hour": hour,
                 "depart_minute": minute,
             })
-
+    
+    # 加载小时参数
     hourly_path = data_dir / hourly_file
     hour_params = {}
     try:
@@ -83,7 +87,8 @@ def load_instance(
                     "runtime": float(row.get("75%运行时间 (min)", 45)),
                     "carbon_emission": float(row.get("碳排放", 0.0)),
                 }
-    except Exception:
+    except Exception as e:
+        # 兼容模式：生成示例数据
         for hour in range(6, 22):
             hour_params[hour] = {
                 "passenger_flow": 150 if hour in [7,8,9,17,18,19] else 100,
@@ -92,127 +97,134 @@ def load_instance(
                 "runtime": 45.0,
                 "carbon_emission": 0.0,
             }
+    
     return schedule_data, hour_params
 
-# -------------------------- 解码函数【已修改】--------------------------
-# 改动：完全使用前端传过来的「预测表解析参数」，不再写死 45min，保留场站往返逻辑
+# -------------------------- 统一解码函数（已修复KeyError+场站位置约束） --------------------------
 def decode_with_random_keys(
     trips: List[Dict[str, Any]],
     hour_params: Dict[int, Dict[str, Any]],
     config: Config,
-    genes: List[float] = None,
+    genes: List[float] = None,  # 贪心算法不需要传genes
     top_k: int = 5,
-    algorithm: str = "greedy",
+    algorithm: str = "genetic",
 ) -> Solution:
-    # 班次排序（原样保留）
+    """
+    统一解码函数：同时支持贪心和遗传算法
+    - greedy：按发车时间原始顺序排序，优先匹配场站位置分配车辆
+    - genetic：按基因值排序，优先匹配场站位置分配车辆
+    """
+    # 1. 排序逻辑：根据算法类型选择
     if algorithm == "greedy":
+        # 贪心算法：严格按发车时间升序排序
         sorted_trips = sorted(trips, key=lambda x: (x["depart_hour"], x["depart_minute"]))
     else:
+        # 遗传算法：按基因值排序
         if genes is None:
-            raise ValueError("遗传算法必须传入genes")
+            raise ValueError("遗传算法必须传入genes参数")
         indexed_trips = list(enumerate(trips))
         indexed_trips.sort(key=lambda x: genes[x[0]])
-        sorted_trips = [t for _, t in indexed_trips]
-
+        sorted_trips = [trip for idx, trip in indexed_trips]
+    
+    # 2. 贪心分配车辆（优先匹配场站位置）
     vehicles = []
     vehicle_schedule = []
     current_time = {}
     vehicle_trip_count = {}
-    vehicle_station = {}  # 追踪车辆场站，保证四惠<->老山往返（原样保留）
-
+    # 新增：追踪每辆车当前所在场站
+    vehicle_station = {}
+    
     for trip in sorted_trips:
-        d_h = trip["depart_hour"]
-        d_m = trip["depart_minute"]
-        d_total = d_h * 60 + d_m
-        direction = trip["direction"]
-
-        # ========== 核心改动：读取【统计预测表】里的真实运行时间、电量 ==========
-        param = hour_params.get(d_h, {})
-        run_time = param.get("runtime", 45.0)
-        power_cons = param.get("power_consumption", "10%")
-        pax_flow = param.get("passenger_flow", 100)
-
-        # 用预测表运行时间计算到达时间（不再固定45分钟）
-        a_total = d_total + run_time
-        a_h = int(a_total // 60)
-        a_m = int(a_total % 60)
-        arrive_time = f"{a_h:02d}:{a_m:02d}"
-
-        trip["runtime"] = run_time
-
+        depart_hour = trip["depart_hour"]
+        depart_minute = trip["depart_minute"]
+        depart_total = depart_hour * 60 + depart_minute
+        direction = trip["direction"]  # 当前任务的发车场站
+        
+        runtime = trip.get("runtime", 45.0)
+        arrive_total = depart_total + runtime
+        arrive_hour = int(arrive_total // 60)
+        arrive_minute = int(arrive_total % 60)
+        arrive_time = f"{arrive_hour:02d}:{arrive_minute:02d}"
+        
+        # ✅ 修复：将runtime添加到trip对象，解决KeyError
+        trip["runtime"] = runtime
+        
         assigned = False
-        # 优先分配同场站空闲车辆（往返闭环逻辑 原样保留）
-        for idx, _ in enumerate(vehicles):
-            last_arr = current_time.get(idx, 0)
-            if last_arr + config.rest_minutes <= d_total and vehicle_station.get(idx, "四惠") == direction:
-                vehicles[idx].append(trip)
+        # 优先分配与当前场站匹配的空闲车辆
+        for i, v in enumerate(vehicles):
+            if (current_time.get(i, 0) + config.rest_minutes <= depart_total 
+                and vehicle_station.get(i, "四惠") == direction):
+                # 分配给已有车辆
+                vehicles[i].append(trip)
                 vehicle_schedule.append({
-                    "vehicle_id": f"车{idx+1:02d}",
+                    "vehicle_id": f"车{i+1:02d}",
                     "depart_time": trip["depart_time"],
                     "arrive_time": arrive_time,
-                    "depart_hour": d_h,
-                    "depart_minute": d_m,
-                    "passenger_flow": pax_flow,
-                    "runtime": run_time,
-                    "direction": direction,
-                    "power_consumption": power_cons,
+                    "depart_hour": depart_hour,
+                    "depart_minute": depart_minute,
+                    "passenger_flow": trip.get("passenger_flow", 100),
+                    "runtime": runtime,
+                    "direction": trip.get("direction", "未知"),
+                    "power_consumption": trip.get("power_consumption", "10%"),
                 })
-                current_time[idx] = a_total
-                vehicle_trip_count[idx] = vehicle_trip_count.get(idx, 0) + 1
-                # 更新车辆到站场站
-                vehicle_station[idx] = "老山" if direction == "四惠" else "四惠"
+                current_time[i] = arrive_total
+                vehicle_trip_count[i] = vehicle_trip_count.get(i, 0) + 1
+                # 更新车辆到站位置
+                vehicle_station[i] = "老山" if direction == "四惠" else "四惠"
                 assigned = True
                 break
-
+        
         if not assigned:
-            # 新增车辆（逻辑原样保留）
-            new_idx = len(vehicles)
+            # 没有匹配场站的车辆，分配新车
             vehicles.append([trip])
             vehicle_schedule.append({
-                "vehicle_id": f"车{new_idx+1:02d}",
+                "vehicle_id": f"车{len(vehicles):02d}",
                 "depart_time": trip["depart_time"],
                 "arrive_time": arrive_time,
-                "depart_hour": d_h,
-                "depart_minute": d_m,
-                "passenger_flow": pax_flow,
-                "runtime": run_time,
-                "direction": direction,
-                "power_consumption": power_cons,
+                "depart_hour": depart_hour,
+                "depart_minute": depart_minute,
+                "passenger_flow": trip.get("passenger_flow", 100),
+                "runtime": runtime,
+                "direction": trip.get("direction", "未知"),
+                "power_consumption": trip.get("power_consumption", "10%"),
             })
-            current_time[new_idx] = a_total
-            vehicle_trip_count[new_idx] = 1
-            vehicle_station[new_idx] = "老山" if direction == "四惠" else "四惠"
-
-    # 目标函数计算（原样保留）
+            current_time[len(vehicles)-1] = arrive_total
+            vehicle_trip_count[len(vehicles)-1] = 1
+            # 新车初始场站：任务是四惠发车则初始在四惠，反之在老山
+            vehicle_station[len(vehicles)-1] = "老山" if direction == "四惠" else "四惠"
+    
+    # 3. 目标函数
     vehicle_cost = len(vehicles) * 1000
-    avg_trip = len(trips) / len(vehicles) if vehicles else 0
-    balance_cost = sum(abs(cnt - avg_trip) * 50 for cnt in vehicle_trip_count.values())
-    peak_penalty = 0
-    for idx, t in enumerate(sorted_trips):
-        if hour_params.get(t["depart_hour"], {}).get("is_peak", False):
+    avg_trips = len(trips) / len(vehicles) if len(vehicles) > 0 else 0
+    balance_cost = 0.0
+    for count in vehicle_trip_count.values():
+        balance_cost += abs(count - avg_trips) * 50
+    peak_penalty = 0.0
+    for idx, trip in enumerate(sorted_trips):
+        if hour_params.get(trip["depart_hour"], {}).get("is_peak", False):
             peak_penalty += idx * 10
-
-    total_idle = 0
-    for idx, last_arr in current_time.items():
-        first_dep = min(t["depart_hour"]*60 + t["depart_minute"] for t in vehicles[idx])
-        total_run = sum(t["runtime"] for t in vehicles[idx])
-        total_idle += last_arr - first_dep - total_run
+    total_idle = 0.0
+    for i, last_arrive in current_time.items():
+        first_depart = min([t["depart_hour"]*60 + t["depart_minute"] for t in vehicles[i]])
+        total_idle += last_arrive - first_depart - sum([t["runtime"] for t in vehicles[i]])
     idle_cost = total_idle * 0.5
-
-    obj = vehicle_cost + balance_cost + peak_penalty + idle_cost
-
-    sol = Solution(
+    objective = vehicle_cost + balance_cost + peak_penalty + idle_cost
+    
+    # 4. 构建Solution对象
+    solution = Solution(
         feasible=True,
-        objective=round(obj, 4),
+        objective=round(objective, 4),
         vehicles_used=len(vehicles),
         total_late_min=0.0,
         relative_gap_to_lb=0.05,
         schedule=vehicle_schedule
     )
-    return sol
+    
+    return solution
 
-# -------------------------- 工具输出函数（原样保留） --------------------------
+# -------------------------- 工具函数 --------------------------
 def solution_summary_dict(solution: Solution) -> Dict[str, Any]:
+    """生成解的摘要信息"""
     return {
         "feasible": solution.feasible,
         "objective": solution.objective,
@@ -223,14 +235,23 @@ def solution_summary_dict(solution: Solution) -> Dict[str, Any]:
     }
 
 def write_solution_outputs(solution: Solution, output_dir: Path) -> None:
+    """将解写入文件"""
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 写入排班表CSV
     if solution.schedule:
         with open(output_dir / "schedule.csv", "w", encoding="utf-8-sig", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=[
-                "vehicle_id","depart_time","arrive_time","depart_hour","depart_minute","runtime","power_consumption"
-            ])
+            writer = csv.DictWriter(f, fieldnames=["vehicle_id", "depart_time", "arrive_time", "depart_hour", "depart_minute"])
             writer.writeheader()
             for item in solution.schedule:
-                writer.writerow(item)
+                writer.writerow({
+                    "vehicle_id": item["vehicle_id"],
+                    "depart_time": item["depart_time"],
+                    "arrive_time": item["arrive_time"],
+                    "depart_hour": item["depart_hour"],
+                    "depart_minute": item["depart_minute"],
+                })
+    
+    # 写入摘要JSON
     with open(output_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(solution_summary_dict(solution), f, ensure_ascii=False, indent=2)
