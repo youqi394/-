@@ -100,31 +100,37 @@ def load_instance(
     
     return schedule_data, hour_params
 
-# -------------------------- ✅ 仅修改目标函数，解码逻辑完全保留你原有的 --------------------------
+# -------------------------- ✅ 新增：支持贪心算法的解码函数 --------------------------
 def decode_with_random_keys(
     trips: List[Dict[str, Any]],
     hour_params: Dict[int, Dict[str, Any]],
     config: Config,
-    genes: List[float],
+    genes: List[float] = None,  # 贪心算法不需要传genes
     top_k: int = 5,
     algorithm: str = "genetic",
 ) -> Solution:
     """
-    解码逻辑100%和你原代码一致：
-    1. 按基因值排序任务（随机键编码核心）
-    2. 贪心分配车辆
-    3. 仅修改目标函数，确保与基因强绑定
+    统一解码函数：同时支持贪心和遗传算法
+    - greedy：按发车时间原始顺序排序，贪心分配车辆（和你给的贪心代码完全一致）
+    - genetic：按基因值排序，贪心分配车辆
     """
-    # 1. 完全保留你原有的排序逻辑
-    indexed_trips = list(enumerate(trips))
-    indexed_trips.sort(key=lambda x: genes[x[0]])
-    sorted_trips = [trip for idx, trip in indexed_trips]
+    # 1. 排序逻辑：根据算法类型选择
+    if algorithm == "greedy":
+        # 贪心算法：严格按发车时间升序排序
+        sorted_trips = sorted(trips, key=lambda x: (x["depart_hour"], x["depart_minute"]))
+    else:
+        # 遗传算法：按基因值排序
+        if genes is None:
+            raise ValueError("遗传算法必须传入genes参数")
+        indexed_trips = list(enumerate(trips))
+        indexed_trips.sort(key=lambda x: genes[x[0]])
+        sorted_trips = [trip for idx, trip in indexed_trips]
     
     # 2. 完全保留你原有的贪心分配逻辑
     vehicles = []
     vehicle_schedule = []
     current_time = {}
-    vehicle_trip_count = {}  # 新增：统计每辆车的任务数
+    vehicle_trip_count = {}
     
     for trip in sorted_trips:
         depart_hour = trip["depart_hour"]
@@ -172,31 +178,21 @@ def decode_with_random_keys(
             current_time[len(vehicles)-1] = arrive_total
             vehicle_trip_count[len(vehicles)-1] = 1
     
-    # 3. ✅ 新目标函数：与基因排序强绑定（不同基因结果一定不同）
-    # 保留你原有的车辆成本
+    # 3. 统一目标函数（和遗传算法完全一致，保证结果可比）
     vehicle_cost = len(vehicles) * 1000
-    
-    # 新增1：车辆负载均衡成本（不同分配顺序结果不同）
     avg_trips = len(trips) / len(vehicles) if len(vehicles) > 0 else 0
     balance_cost = 0.0
     for count in vehicle_trip_count.values():
         balance_cost += abs(count - avg_trips) * 50
-    
-    # 新增2：高峰时段优先成本（高峰任务先分配，不同顺序结果不同）
     peak_penalty = 0.0
     for idx, trip in enumerate(sorted_trips):
         if hour_params.get(trip["depart_hour"], {}).get("is_peak", False):
-            # 高峰任务排在后面会有惩罚
             peak_penalty += idx * 10
-    
-    # 新增3：总空闲时间成本（不同分配顺序结果不同）
     total_idle = 0.0
     for i, last_arrive in current_time.items():
         first_depart = min([t["depart_hour"]*60 + t["depart_minute"] for t in vehicles[i]])
         total_idle += last_arrive - first_depart - sum([t["runtime"] for t in vehicles[i]])
     idle_cost = total_idle * 0.5
-    
-    # 总目标值 = 车辆成本 + 均衡成本 + 高峰惩罚 + 空闲成本
     objective = vehicle_cost + balance_cost + peak_penalty + idle_cost
     
     # 4. 完全保留你原有的Solution构建逻辑
