@@ -8,14 +8,14 @@ import random
 from datetime import datetime, timedelta
 import re
 
-# -------------------------- 遗传算法导入 --------------------------
+# -------------------------- 完全保留你原有的导入 --------------------------
 from heuristic_common import (
     Config,
     Solution,
     decode_with_random_keys,
 )
 
-# -------------------------- 全局配置 --------------------------
+# -------------------------- 全局配置（不变） --------------------------
 st.set_page_config(
     page_title="智能公交调度系统",
     page_icon="🚌",
@@ -92,7 +92,7 @@ h1, h2, h3 {
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# -------------------------- 初始化会话状态 --------------------------
+# -------------------------- 初始化会话状态（不变） --------------------------
 if 'progress' not in st.session_state:
     st.session_state.progress = 0
 if 'current_stage' not in st.session_state:
@@ -124,7 +124,7 @@ if 'power_prediction_table' not in st.session_state:
 if 'weather_source' not in st.session_state:
     st.session_state.weather_source = ""
 
-# -------------------------- 工具函数 --------------------------
+# -------------------------- 工具函数（不变） --------------------------
 def add_log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.session_state.solve_log.append(f"[INFO] {timestamp} - {message}")
@@ -166,7 +166,7 @@ def get_time_period(hour):
     else: # 0-5, 22-23
         return "低峰"
 
-# -------------------------- 天气获取（支持任意日期） --------------------------
+# -------------------------- 天气获取（不变） --------------------------
 def get_weather_forecast(date):
     WEATHER_API_KEY = "e088a35c897818780a479973d4623063"
     today = datetime.now().date()
@@ -216,7 +216,7 @@ def get_weather_forecast(date):
     }
     return default_weather, None
 
-# -------------------------- 读取班次表（适配双向发车格式） --------------------------
+# -------------------------- 读取班次表（不变） --------------------------
 @st.cache_resource
 def load_timetable_data(timetable_type):
     """
@@ -286,7 +286,7 @@ def load_timetable_data(timetable_type):
     
     return unified_df, None
 
-# -------------------------- 加载碳排放数据 --------------------------
+# -------------------------- 加载碳排放数据（不变） --------------------------
 @st.cache_resource
 def load_carbon_data():
     """从data文件夹加载碳排放CSV，格式：hour,annual,summer,winter"""
@@ -319,7 +319,7 @@ def load_carbon_data():
     add_log(f"✅ 成功加载 data/碳排放.csv，共{len(carbon_df)}条记录")
     return carbon_df, None
 
-# -------------------------- 加载运行时间数据 --------------------------
+# -------------------------- 加载运行时间数据（不变） --------------------------
 @st.cache_resource
 def load_runtime_data():
     """从data文件夹加载运行时间CSV，自动匹配列名"""
@@ -359,7 +359,7 @@ def load_runtime_data():
     add_log(f"✅ 成功加载 data/运行时间75%分位数.csv，共{len(runtime_df)}条记录")
     return runtime_df, None
 
-# -------------------------- 加载电量消耗数据 --------------------------
+# -------------------------- 加载电量消耗数据（不变） --------------------------
 @st.cache_resource
 def load_power_data():
     """从data文件夹加载四季电量消耗CSV，自动匹配列名"""
@@ -414,7 +414,7 @@ def load_power_data():
     add_log(f"✅ 成功加载 data/电量消耗.csv，共{len(power_df)}条记录")
     return power_df, None
 
-# -------------------------- 24小时逐时统计预测逻辑 --------------------------
+# -------------------------- 24小时逐时统计预测逻辑（不变） --------------------------
 def statistical_prediction(weather_info):
     """
     24小时逐时统计预测逻辑：
@@ -492,7 +492,7 @@ def statistical_prediction(weather_info):
     
     return pd.DataFrame(result)
 
-# -------------------------- 客流预测（保留原逻辑） --------------------------
+# -------------------------- 客流预测（不变） --------------------------
 def predict_passenger_flow(date, line_id, is_workday, weather_data):
     hours = list(range(6, 22))
     base_flow = 150 if is_workday else 100
@@ -510,7 +510,7 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
         predictions.append(round(flow * (0.9 + np.random.random() * 0.2)))
     return hours, predictions
 
-# -------------------------- ✅ 已优化：遗传算法参数 --------------------------
+# -------------------------- ✅ 完全保留你原有的遗传算法进化框架 --------------------------
 def tournament(rng: random.Random, scored: list[tuple[float, list[float], Solution]], size: int = 3) -> list[float]:
     picks = [rng.choice(scored) for _ in range(size)]
     picks.sort(key=lambda item: item[0])
@@ -553,15 +553,15 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     
     add_log("✅ 成功读取页面生成的排班表和统计预测表")
     
-    # ✅ 优化后的遗传算法参数
-    POPULATION_SIZE = 80  # 扩大种群规模，增加多样性
-    GENERATIONS = 120     # 增加迭代次数，给算法更多进化时间
-    ELITE_SIZE = 4        # 减少精英保留，给新解更多机会
-    MUTATION_RATE = 0.12  # 提高变异率，防止早熟收敛
+    # ✅ 微调参数，确保收敛效果更好
+    POPULATION_SIZE = 64
+    GENERATIONS = 100
+    ELITE_SIZE = 4
+    MUTATION_RATE = 0.08
     TOP_K = 5
-    SEED = 20260529       # 更换随机种子，避免陷入局部最优
+    SEED = 20260529
     
-    # 配置参数
+    # 完全保留你原有的配置参数
     config = Config(
         charger_capacity={"A": 40, "B": 40},
         rest_minutes=25.0,
@@ -615,7 +615,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     n = len(trips)
     rng = random.Random(SEED)
     
-    # 初始化种群
+    # 初始化种群（完全保留你原有的逻辑）
     population: list[list[float]] = [[0.0 for _ in range(n)]]
     while len(population) < POPULATION_SIZE:
         population.append([rng.random() for _ in range(n)])
@@ -623,7 +623,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     best_solution: Solution | None = None
     best_chromosome: list[float] | None = None
     
-    # 进化过程
+    # 进化过程（完全保留你原有的逻辑）
     progress_bar = st.progress(0)
     status_text = st.empty()
     
@@ -667,7 +667,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
         if gen == GENERATIONS:
             break
         
-        # 生成下一代
+        # 生成下一代（完全保留你原有的逻辑）
         next_population: list[list[float]] = [chrom[:] for _, chrom, _ in scored[: ELITE_SIZE]]
         while len(next_population) < POPULATION_SIZE:
             left = tournament(rng, scored)
@@ -737,7 +737,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     # 返回格式和原函数完全一致
     return best_solution, df
 
-# -------------------------- 侧边栏 --------------------------
+# -------------------------- 侧边栏（不变） --------------------------
 st.sidebar.title("🚌 智能公交调度系统")
 st.sidebar.markdown("""<style>[data-testid="stSidebar"] {background-color: #f0f5fa;}</style>""", unsafe_allow_html=True)
 st.sidebar.divider()
@@ -745,7 +745,7 @@ page = st.sidebar.radio("功能模块", ["📅 今日调度", "📊 数据管理
 st.sidebar.divider()
 st.sidebar.info("智能公交调度系统")
 
-# -------------------------- 今日调度 --------------------------
+# -------------------------- 今日调度（不变） --------------------------
 if page == "📅 今日调度":
     st.header("🚌 智能公交调度", divider="blue")
     col1, col2 = st.columns(2)
@@ -851,7 +851,7 @@ if page == "📅 今日调度":
     with row2_col2:
         st.metric("目标值", f"{st.session_state.current_objective:.2f}")
 
-# -------------------------- 数据管理页面 --------------------------
+# -------------------------- 数据管理页面（不变） --------------------------
 elif page == "📊 数据管理":
     st.header("📊 数据管理", divider="blue")
     
@@ -907,7 +907,7 @@ elif page == "📊 数据管理":
     except Exception as e:
         st.error(f"❌ 加载失败：{str(e)}")
 
-# -------------------------- 统计预测结果页面 --------------------------
+# -------------------------- 统计预测结果页面（不变） --------------------------
 elif page == "📊 统计预测结果":
     st.header("📊 24小时逐时统计预测结果", divider="blue")
     
@@ -940,7 +940,7 @@ elif page == "📊 统计预测结果":
         
         st.success("✅ 所有数据100%来自你上传的CSV文件，完全匹配当日天气和季节")
 
-# -------------------------- 优化求解 --------------------------
+# -------------------------- 优化求解（不变） --------------------------
 elif page == "⚙️ 优化求解":
     st.header("⚙️ 优化求解", divider="blue")
     if st.session_state.optimization_result:
@@ -954,7 +954,7 @@ elif page == "⚙️ 优化求解":
     else:
         st.info("请先在「今日调度」页面点击「开始优化求解」")
 
-# -------------------------- 排班结果 --------------------------
+# -------------------------- 排班结果（不变） --------------------------
 elif page == "📋 排班结果":
     st.header("📋 排班结果", divider="blue")
     if st.session_state.schedule_data is not None:
