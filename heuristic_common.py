@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # -------------------------- 常量定义 --------------------------
 DATA_DIR = Path(__file__).resolve().parent / "data"
-DEFAULT_SCHEDULE = "节假日发车时刻表.csv"
+DEFAULT_SCHEDULE = "工作日发车时刻表.csv"
 DEFAULT_HOURLY = "电量消耗.csv"
 
 # -------------------------- 数据类定义 --------------------------
@@ -100,7 +100,7 @@ def load_instance(
     
     return schedule_data, hour_params
 
-# -------------------------- 统一解码函数（已修复KeyError） --------------------------
+# -------------------------- 统一解码函数（已修复KeyError+场站位置约束） --------------------------
 def decode_with_random_keys(
     trips: List[Dict[str, Any]],
     hour_params: Dict[int, Dict[str, Any]],
@@ -111,8 +111,8 @@ def decode_with_random_keys(
 ) -> Solution:
     """
     统一解码函数：同时支持贪心和遗传算法
-    - greedy：按发车时间原始顺序排序，贪心分配车辆
-    - genetic：按基因值排序，贪心分配车辆
+    - greedy：按发车时间原始顺序排序，优先匹配场站位置分配车辆
+    - genetic：按基因值排序，优先匹配场站位置分配车辆
     """
     # 1. 排序逻辑：根据算法类型选择
     if algorithm == "greedy":
@@ -126,16 +126,19 @@ def decode_with_random_keys(
         indexed_trips.sort(key=lambda x: genes[x[0]])
         sorted_trips = [trip for idx, trip in indexed_trips]
     
-    # 2. 贪心分配车辆
+    # 2. 贪心分配车辆（优先匹配场站位置）
     vehicles = []
     vehicle_schedule = []
     current_time = {}
     vehicle_trip_count = {}
+    # 新增：追踪每辆车当前所在场站
+    vehicle_station = {}
     
     for trip in sorted_trips:
         depart_hour = trip["depart_hour"]
         depart_minute = trip["depart_minute"]
         depart_total = depart_hour * 60 + depart_minute
+        direction = trip["direction"]  # 当前任务的发车场站
         
         runtime = trip.get("runtime", 45.0)
         arrive_total = depart_total + runtime
@@ -146,10 +149,11 @@ def decode_with_random_keys(
         # ✅ 修复：将runtime添加到trip对象，解决KeyError
         trip["runtime"] = runtime
         
-        # 找可用车辆
         assigned = False
+        # 优先分配与当前场站匹配的空闲车辆
         for i, v in enumerate(vehicles):
-            if current_time.get(i, 0) + config.rest_minutes <= depart_total:
+            if (current_time.get(i, 0) + config.rest_minutes <= depart_total 
+                and vehicle_station.get(i, "四惠") == direction):
                 # 分配给已有车辆
                 vehicles[i].append(trip)
                 vehicle_schedule.append({
@@ -165,11 +169,13 @@ def decode_with_random_keys(
                 })
                 current_time[i] = arrive_total
                 vehicle_trip_count[i] = vehicle_trip_count.get(i, 0) + 1
+                # 更新车辆到站位置
+                vehicle_station[i] = "老山" if direction == "四惠" else "四惠"
                 assigned = True
                 break
         
         if not assigned:
-            # 分配新车
+            # 没有匹配场站的车辆，分配新车
             vehicles.append([trip])
             vehicle_schedule.append({
                 "vehicle_id": f"车{len(vehicles):02d}",
@@ -184,6 +190,8 @@ def decode_with_random_keys(
             })
             current_time[len(vehicles)-1] = arrive_total
             vehicle_trip_count[len(vehicles)-1] = 1
+            # 新车初始场站：任务是四惠发车则初始在四惠，反之在老山
+            vehicle_station[len(vehicles)-1] = "老山" if direction == "四惠" else "四惠"
     
     # 3. 目标函数
     vehicle_cost = len(vehicles) * 1000
