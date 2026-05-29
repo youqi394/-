@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
-import time
 import streamlit as st
 import pandas as pd
 import numpy as np
 import time
-import requests
 import random
+import requests
 import csv
 import json
 from datetime import datetime, timedelta
@@ -133,7 +132,7 @@ if 'greedy_objective' not in st.session_state:
     st.session_state.greedy_objective = 0.0
 # 遗传算法历史数据
 if 'ga_history' not in st.session_state:
-    st.session_state.ga_history = []
+    st.session_state.ga_history = None
 if 'best_chromosome' not in st.session_state:
     st.session_state.best_chromosome = None
 
@@ -436,7 +435,7 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
             flow = base_flow * rain_factor
         else:
             flow = base_flow * 0.5 * rain_factor
-        predictions.append(round(flow * (0.9 + np.random.random() * 0.2)))
+        predictions.append(round(flow * (0.9 + random.random() * 0.2)))
     return hours, predictions
 
 # ==================== 从统计预测表解析参数 ====================
@@ -567,14 +566,12 @@ def optimize_greedy_only(trips, hour_params, config, initial_battery, power_pred
     return greedy_solution, greedy_df
 
 def optimize_genetic_full(trips, hour_params, config, initial_battery, power_prediction_table):
-    """执行遗传算法（带Gap收敛终止，固定默认参数）"""
+    """执行遗传算法（带Gap收敛终止，动态随机种子）"""
     add_log("🔄 运行精确求解（遗传算法）")
     run_started = time.perf_counter()
-    import time
-# 用整数时间戳作为种子，每次运行都不同
+    # 动态随机种子，每次运行结果不同
     rng = random.Random(int(time.time()))
-# 或者用更精确的纳秒时间戳（完全避免重复）
-# rng = random.Random(time.time_ns())
+
     n = len(trips)
     pop_size = 56
     elite_num = 6
@@ -651,7 +648,7 @@ def optimize_genetic_full(trips, hour_params, config, initial_battery, power_pre
 
     total_runtime_sec = time.perf_counter() - run_started
     best_solution.runtime_sec = total_runtime_sec
-    best_solution.metadata["ga_parameters"] = {"population": pop_size, "elite": elite_num, "mutation_rate": mut_rate, "seed": 20260528}
+    best_solution.metadata["ga_parameters"] = {"population": pop_size, "elite": elite_num, "mutation_rate": mut_rate}
     st.session_state.ga_history = ga_history
     st.session_state.best_chromosome = best_chromosome
     st.session_state.current_objective = best_solution.objective
@@ -679,7 +676,7 @@ if page == "📅 今日调度":
         initial_battery = st.number_input("初始电量（%）", 0, 100, 100)
         solve_time = st.number_input("求解时间上限（秒）", 60, 3600, 300)
 
-    # ========== 仅新增：求解方式选择框 ==========
+    # 求解方式选择
     st.divider()
     solve_mode = st.selectbox("优化求解方式", ["粗略求解（贪心算法）", "精确求解（遗传算法）"])
     st.divider()
@@ -786,7 +783,7 @@ if page == "📅 今日调度":
                 csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
                 st.download_button("📥 下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
                 st.download_button("📥 下载精确解排班表", csv_genetic, f"公交排班表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
-                if st.session_state.ga_history:
+                if st.session_state.ga_history is not None:
                     hist_df = pd.DataFrame(st.session_state.ga_history)
                     csv_hist = hist_df.to_csv(index=False, encoding="utf-8-sig")
                     st.download_button("📥 下载遗传迭代历史", csv_hist, f"GA_历史记录_{dispatch_date.strftime('%Y%m%d')}.csv")
@@ -901,7 +898,7 @@ elif page == "⚙️ 优化求解":
             st.subheader("遗传算法收敛曲线")
             conv_df = pd.DataFrame(st.session_state.convergence_data, columns=["代次", "目标值"])
             st.line_chart(conv_df.set_index("代次"))
-        if st.session_state.ga_history:
+        if st.session_state.ga_history is not None:
             st.subheader("每代迭代明细")
             hist_df = pd.DataFrame(st.session_state.ga_history)
             st.dataframe(hist_df, use_container_width=True)
