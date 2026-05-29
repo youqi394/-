@@ -100,7 +100,7 @@ def load_instance(
     
     return schedule_data, hour_params
 
-# -------------------------- ✅ 统一解码函数（保留方向信息） --------------------------
+# -------------------------- ✅ 已修复：添加runtime字段到trip对象 --------------------------
 def decode_with_random_keys(
     trips: List[Dict[str, Any]],
     hour_params: Dict[int, Dict[str, Any]],
@@ -142,6 +142,9 @@ def decode_with_random_keys(
         arrive_hour = int(arrive_total // 60)
         arrive_minute = int(arrive_total % 60)
         arrive_time = f"{arrive_hour:02d}:{arrive_minute:02d}"
+        
+        # ✅ 关键修复：将runtime添加到trip对象中，确保vehicles列表里的trip有runtime字段
+        trip["runtime"] = runtime
         
         # 找可用车辆（完全保留你原有的逻辑）
         assigned = False
