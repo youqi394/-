@@ -92,7 +92,7 @@ h1, h2, h3 {
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# -------------------------- ✅ 新增：贪心算法相关会话状态 --------------------------
+# -------------------------- 会话状态（不变） --------------------------
 if 'progress' not in st.session_state:
     st.session_state.progress = 0
 if 'current_stage' not in st.session_state:
@@ -123,7 +123,7 @@ if 'power_prediction_table' not in st.session_state:
     st.session_state.power_prediction_table = None
 if 'weather_source' not in st.session_state:
     st.session_state.weather_source = ""
-# 新增：贪心算法结果
+# 贪心算法结果
 if 'greedy_solution' not in st.session_state:
     st.session_state.greedy_solution = None
 if 'greedy_schedule_data' not in st.session_state:
@@ -223,12 +223,12 @@ def get_weather_forecast(date):
     }
     return default_weather, None
 
-# -------------------------- 读取班次表（不变） --------------------------
+# -------------------------- ✅ 修改：读取班次表保留方向信息 --------------------------
 @st.cache_resource
 def load_timetable_data(timetable_type):
     """
     根据选择的班次类型读取对应的时刻表文件
-    自动识别所有包含"发车时刻"或"发车时间"的列，合并双向所有班次
+    保留每个发车时间的方向信息（四惠/老山）
     兼容工作日（有时段列）和节假日（无时段列）格式
     """
     # 映射班次类型到文件名
@@ -262,36 +262,45 @@ def load_timetable_data(timetable_type):
     add_log(f"✅ 成功加载原始时刻表，共{len(df)}行")
     add_log(f"📌 原始列名：{list(df.columns)}")
     
-    # 自动识别所有发车时刻列
-    depart_columns = []
+    # 自动识别所有发车时刻列并记录方向
+    all_trips = []
     for col in df.columns:
         normalized = normalize_column_name(col)
         if "发车时刻" in normalized or "发车时间" in normalized:
-            depart_columns.append(col)
+            # 判断方向
+            if "四惠-老山" in col or "四惠到老山" in col:
+                direction = "四惠"
+            elif "老山-四惠" in col or "老山到四惠" in col:
+                direction = "老山"
+            else:
+                direction = "未知"
+            
+            # 提取该列的所有发车时间
+            times = df[col].dropna().tolist()
+            for time_str in times:
+                parts = time_str.split(":")
+                if len(parts) == 2:
+                    try:
+                        depart_hour = int(parts[0])
+                        depart_minute = int(parts[1])
+                        all_trips.append({
+                            "depart_time": time_str,
+                            "depart_hour": depart_hour,
+                            "depart_minute": depart_minute,
+                            "direction": direction
+                        })
+                    except:
+                        pass
     
-    if not depart_columns:
+    if not all_trips:
         error_msg = "未找到任何发车时刻列，请检查CSV文件列名"
         add_log(f"❌ {error_msg}")
         return None, error_msg
     
-    add_log(f"✅ 识别到 {len(depart_columns)} 个发车方向：{depart_columns}")
+    add_log(f"✅ 识别到 {len(set([t['direction'] for t in all_trips]))} 个发车方向")
+    add_log(f"✅ 合并完成，共{len(all_trips)}个有效发车班次")
     
-    # 合并所有方向的发车时间
-    all_depart_times = []
-    for col in depart_columns:
-        times = df[col].dropna().tolist()
-        all_depart_times.extend(times)
-    
-    # 去重并排序
-    all_depart_times = list(set(all_depart_times))
-    all_depart_times.sort(key=lambda x: (int(x.split(":")[0]), int(x.split(":")[1])))
-    
-    # 生成统一的发车时间表
-    unified_df = pd.DataFrame({"发车时间": all_depart_times})
-    
-    add_log(f"✅ 合并完成，共{len(unified_df)}个有效发车班次")
-    
-    return unified_df, None
+    return all_trips, None
 
 # -------------------------- 加载碳排放数据（不变） --------------------------
 @st.cache_resource
@@ -517,7 +526,7 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
         predictions.append(round(flow * (0.9 + np.random.random() * 0.2)))
     return hours, predictions
 
-# -------------------------- ✅ 双算法求解器：先贪心后遗传 --------------------------
+# -------------------------- ✅ 双算法求解器（不变，仅修改排班表生成） --------------------------
 def tournament(rng: random.Random, scored: list[tuple[float, list[float], Solution]], size: int = 3) -> list[float]:
     picks = [rng.choice(scored) for _ in range(size)]
     picks.sort(key=lambda item: item[0])
@@ -542,6 +551,93 @@ def mutate(rng: random.Random, chromosome: list[float], rate: float) -> None:
 
 def fitness(solution: Solution) -> float:
     return solution.objective
+
+# -------------------------- ✅ 核心：生成标准格式排班表（按车辆分组+双向分栏+电量标记） --------------------------
+def generate_standard_schedule(raw_schedule, power_prediction_table, initial_battery=100.0, power_threshold=20.0):
+    """
+    生成标准格式排班表：
+    1. 按车辆编号分组，先车01，再车02，依此类推
+    2. 列：车辆编号 | 四惠发车时间 | 老山发车时间
+    3. 非对应方向显示"/"
+    4. 电量低于20%时，在发车时间后加"(充电)"
+    """
+    if not raw_schedule:
+        return pd.DataFrame()
+    
+    # 1. 按车辆编号分组
+    vehicle_groups = {}
+    for item in raw_schedule:
+        vehicle_id = item["vehicle_id"]
+        if vehicle_id not in vehicle_groups:
+            vehicle_groups[vehicle_id] = []
+        vehicle_groups[vehicle_id].append(item)
+    
+    # 2. 按车辆编号排序（车01 → 车02 → ...）
+    sorted_vehicles = sorted(vehicle_groups.keys(), key=lambda x: int(x.replace("车", "")))
+    
+    # 3. 构建电量消耗映射表（小时 → 电量消耗百分比）
+    power_map = {}
+    power_column = [col for col in power_prediction_table.columns if "电量消耗" in col][0]
+    for _, row in power_prediction_table.iterrows():
+        hour = int(row["小时"].split(":")[0])
+        power_str = row[power_column].replace("%", "")
+        try:
+            power_map[hour] = float(power_str)
+        except:
+            power_map[hour] = 10.0  # 默认值
+    
+    # 4. 生成最终排班表
+    final_schedule = []
+    for vehicle_id in sorted_vehicles:
+        trips = vehicle_groups[vehicle_id]
+        # 按发车时间排序
+        trips.sort(key=lambda x: (x["depart_hour"], x["depart_minute"]))
+        
+        # 初始化车辆电量
+        remaining_battery = initial_battery
+        
+        for trip in trips:
+            depart_time = trip["depart_time"]
+            depart_hour = trip["depart_hour"]
+            direction = trip["direction"]
+            
+            # 获取本次电量消耗
+            power_consumption = power_map.get(depart_hour, 10.0)
+            
+            # 检查是否需要充电
+            need_charge = False
+            if remaining_battery - power_consumption < power_threshold:
+                need_charge = True
+                # 充电后满电，再消耗本次电量
+                remaining_battery = 100.0 - power_consumption
+            else:
+                remaining_battery -= power_consumption
+            
+            # 构建行数据
+            row = {
+                "车辆编号": vehicle_id,
+                "四惠发车时间": "",
+                "老山发车时间": ""
+            }
+            
+            # 填充对应方向的发车时间
+            display_time = depart_time
+            if need_charge:
+                display_time += "(充电)"
+            
+            if direction == "四惠":
+                row["四惠发车时间"] = display_time
+                row["老山发车时间"] = "/"
+            elif direction == "老山":
+                row["四惠发车时间"] = "/"
+                row["老山发车时间"] = display_time
+            else:
+                row["四惠发车时间"] = display_time
+                row["老山发车时间"] = "/"
+            
+            final_schedule.append(row)
+    
+    return pd.DataFrame(final_schedule)
 
 def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_limit):
     add_log("开始初始化双算法求解器")
@@ -574,35 +670,28 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     # 提取小时参数
     hour_params = {}
     pred_df = st.session_state.power_prediction_table
+    power_column = [col for col in pred_df.columns if "电量消耗" in col][0]
     for _, row in pred_df.iterrows():
         hour_str = row["小时"]
         hour = int(hour_str.split(":")[0])
+        power_str = row[power_column].replace("%", "")
+        try:
+            power_consumption = float(power_str)
+        except:
+            power_consumption = 10.0
+        
         hour_params[hour] = {
             "passenger_flow": predictions[hour-6] if 6 <= hour <= 21 else 0,
             "is_peak": row["时段类型"] in ["早高峰", "晚高峰"],
             "weather": row["天气"],
-            "power_consumption": row[[col for col in row.index if "电量消耗" in col][0]],
+            "power_consumption": f"{power_consumption:.2f}%",
             "runtime": float(row["75%运行时间 (min)"]),
             "carbon_emission": float(row[[col for col in row.index if "碳排放" in col][0]])
         }
     add_log(f"✅ 成功从统计预测表提取 {len(hour_params)} 个小时的参数")
     
-    # 提取任务列表
-    timetable_df = st.session_state.timetable_data
-    trips = []
-    for idx, row in timetable_df.iterrows():
-        depart_time_str = row["发车时间"]
-        parts = depart_time_str.split(":")
-        depart_hour = int(parts[0])
-        depart_minute = int(parts[1])
-        trips.append({
-            "id": f"trip_{idx}",
-            "depart_hour": depart_hour,
-            "depart_minute": depart_minute,
-            "depart_time": depart_time_str,
-            "passenger_flow": hour_params.get(depart_hour, {}).get("passenger_flow", 100),
-            "runtime": hour_params.get(depart_hour, {}).get("runtime", 45.0)
-        })
+    # 提取任务列表（保留方向信息）
+    trips = st.session_state.timetable_data
     add_log(f"✅ 成功从排班表提取 {len(trips)} 个任务（双向合并后）")
     
     # -------------------------- 第一步：运行贪心算法（粗略解） --------------------------
@@ -620,41 +709,14 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
         algorithm="greedy"
     )
     
-    # 生成贪心排班表
-    greedy_schedule = []
-    if hasattr(greedy_solution, 'schedule') and greedy_solution.schedule:
-        add_log("✅ 使用贪心算法返回的真实排班结果")
-        for item in greedy_solution.schedule:
-            greedy_schedule.append({
-                "车辆编号": item.get("vehicle_id", "未知"),
-                "发车时间": item.get("depart_time", "未知"),
-                "到达时间": item.get("arrive_time", "未知"),
-                "司机": item.get("driver", f"司机{random.randint(1,20):02d}"),
-                "电量消耗": item.get("power_consumption", "10%")
-            })
-    else:
-        add_log("⚠️ 贪心算法未返回详细排班，使用兼容模式生成")
-        vehicle_counter = 0
-        for trip in trips:
-            depart_time = trip["depart_time"]
-            depart_hour = trip["depart_hour"]
-            depart_minute = trip["depart_minute"]
-            vehicle_id = f"车{(vehicle_counter % vehicle_count)+1:02d}"
-            vehicle_counter += 1
-            runtime = trip["runtime"]
-            arrive_minute = depart_minute + int(runtime)
-            arrive_hour = depart_hour + arrive_minute // 60
-            arrive_minute = arrive_minute % 60
-            arrive_time = f"{arrive_hour:02d}:{arrive_minute:02d}"
-            greedy_schedule.append({
-                "车辆编号": vehicle_id,
-                "发车时间": depart_time,
-                "到达时间": arrive_time,
-                "司机": f"司机{(ord(vehicle_id[-2:])%20)+1:02d}",
-                "电量消耗": hour_params.get(depart_hour, {}).get("power_consumption", "10%")
-            })
+    # 生成标准格式贪心排班表
+    greedy_df = generate_standard_schedule(
+        greedy_solution.schedule,
+        st.session_state.power_prediction_table,
+        initial_battery=initial_battery,
+        power_threshold=20.0
+    )
     
-    greedy_df = pd.DataFrame(greedy_schedule)
     st.session_state.greedy_solution = greedy_solution
     st.session_state.greedy_schedule_data = greedy_df
     st.session_state.greedy_objective = greedy_solution.objective
@@ -746,42 +808,15 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     add_log(f"✅ 遗传算法求解完成，最优目标值：{best_solution.objective:.2f}")
     st.session_state.current_objective = best_solution.objective
     
-    # 生成遗传排班表
-    schedule = []
-    if hasattr(best_solution, 'schedule') and best_solution.schedule:
-        add_log("✅ 使用遗传算法返回的真实排班结果")
-        for item in best_solution.schedule:
-            schedule.append({
-                "车辆编号": item.get("vehicle_id", "未知"),
-                "发车时间": item.get("depart_time", "未知"),
-                "到达时间": item.get("arrive_time", "未知"),
-                "司机": item.get("driver", f"司机{random.randint(1,20):02d}"),
-                "电量消耗": item.get("power_consumption", "10%")
-            })
-    else:
-        add_log("⚠️ 遗传算法未返回详细排班，使用兼容模式生成")
-        vehicle_counter = 0
-        for trip in trips:
-            depart_time = trip["depart_time"]
-            depart_hour = trip["depart_hour"]
-            depart_minute = trip["depart_minute"]
-            vehicle_id = f"车{(vehicle_counter % vehicle_count)+1:02d}"
-            vehicle_counter += 1
-            runtime = trip["runtime"]
-            arrive_minute = depart_minute + int(runtime)
-            arrive_hour = depart_hour + arrive_minute // 60
-            arrive_minute = arrive_minute % 60
-            arrive_time = f"{arrive_hour:02d}:{arrive_minute:02d}"
-            schedule.append({
-                "车辆编号": vehicle_id,
-                "发车时间": depart_time,
-                "到达时间": arrive_time,
-                "司机": f"司机{(ord(vehicle_id[-2:])%20)+1:02d}",
-                "电量消耗": hour_params.get(depart_hour, {}).get("power_consumption", "10%")
-            })
+    # 生成标准格式遗传排班表
+    df = generate_standard_schedule(
+        best_solution.schedule,
+        st.session_state.power_prediction_table,
+        initial_battery=initial_battery,
+        power_threshold=20.0
+    )
     
-    df = pd.DataFrame(schedule)
-    add_log(f"✅ 生成遗传排班表，共{len(df)}个班次")
+    add_log(f"✅ 生成标准格式排班表，共{len(df)}个班次")
     
     return best_solution, df
 
@@ -793,7 +828,7 @@ page = st.sidebar.radio("功能模块", ["📅 今日调度", "📊 数据管理
 st.sidebar.divider()
 st.sidebar.info("智能公交调度系统")
 
-# -------------------------- 今日调度（新增双导出） --------------------------
+# -------------------------- 今日调度（不变） --------------------------
 if page == "📅 今日调度":
     st.header("🚌 智能公交调度", divider="blue")
     col1, col2 = st.columns(2)
@@ -819,9 +854,13 @@ if page == "📅 今日调度":
                 st.success(f"✅ 成功读取 {timetable_type} 班次表，共{len(timetable_df)}条记录")
             else:
                 # 文件不存在时使用示例数据
-                st.session_state.timetable_data = pd.DataFrame({
-                    "发车时间":[f"{6+i//2:02d}:{i%2*30:02d}"for i in range(10)]
-                })
+                st.session_state.timetable_data = [
+                    {"depart_time": f"{6+i//2:02d}:{i%2*30:02d}", 
+                     "depart_hour": 6+i//2, 
+                     "depart_minute": i%2*30, 
+                     "direction": "四惠" if i%2==0 else "老山"} 
+                    for i in range(10)
+                ]
                 st.warning(f"⚠️ 未找到 {timetable_type} 班次表，使用示例数据")
             
             st.session_state.progress = 24
@@ -955,8 +994,10 @@ elif page == "📊 数据管理":
     st.subheader("班次表数据状态")
     try:
         if st.session_state.timetable_data is not None:
-            st.success("✅ 已加载班次表数据（双向合并后）")
-            st.dataframe(st.session_state.timetable_data, use_container_width=True)
+            st.success("✅ 已加载班次表数据（保留方向信息）")
+            # 转换为DataFrame显示
+            df = pd.DataFrame(st.session_state.timetable_data)
+            st.dataframe(df, use_container_width=True)
         else:
             st.info("请在「今日调度」页面点击「读取班次表」加载数据")
     except Exception as e:
@@ -995,7 +1036,7 @@ elif page == "📊 统计预测结果":
         
         st.success("✅ 所有数据100%来自你上传的CSV文件，完全匹配当日天气和季节")
 
-# -------------------------- ✅ 优化求解页面：双结果展示 --------------------------
+# -------------------------- 优化求解页面（不变） --------------------------
 elif page == "⚙️ 优化求解":
     st.header("⚙️ 优化求解", divider="blue")
     
@@ -1026,7 +1067,7 @@ elif page == "⚙️ 优化求解":
     else:
         st.info("请先在「今日调度」页面点击「开始优化求解」")
 
-# -------------------------- ✅ 排班结果页面：双表+双导出 --------------------------
+# -------------------------- 排班结果页面（不变，显示新格式） --------------------------
 elif page == "📋 排班结果":
     st.header("📋 排班结果", divider="blue")
     
