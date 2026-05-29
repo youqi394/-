@@ -14,7 +14,7 @@ from heuristic_common import (
     decode_with_random_keys,
 )
 
-# ==================== 页面全局样式 ====================
+# ==================== 页面全局样式（原样保留） ====================
 st.set_page_config(
     page_title="智能公交调度系统",
     page_icon="🚌",
@@ -34,7 +34,7 @@ h1,h2,h3 {color: #2c3e50; font-weight: 600;}
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# ==================== 会话状态初始化 ====================
+# ==================== 会话状态初始化（原样保留） ====================
 if 'progress' not in st.session_state:
     st.session_state.progress = 0
 if 'current_stage' not in st.session_state:
@@ -72,7 +72,7 @@ if 'greedy_schedule_data' not in st.session_state:
 if 'greedy_objective' not in st.session_state:
     st.session_state.greedy_objective = 0.0
 
-# ==================== 工具函数 ====================
+# ==================== 工具函数（全部原样保留） ====================
 def add_log(message):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.session_state.solve_log.append(f"[INFO] {ts} - {message}")
@@ -107,7 +107,7 @@ def get_time_period(hour):
         return "平峰"
     return "低峰"
 
-# ==================== 天气获取 ====================
+# ==================== 天气获取（原样保留） ====================
 def get_weather_forecast(date):
     WEATHER_API_KEY = "e088a35c897818780a479973d4623063"
     today = datetime.now().date()
@@ -138,7 +138,7 @@ def get_weather_forecast(date):
     add_log("使用默认天气数据")
     return {"date":date,"temp_max":25,"temp_min":18,"weather":"晴","is_rain":0}, None
 
-# ==================== 加载时刻表（双向方向识别） ====================
+# ==================== 加载时刻表（双向识别 原样保留） ====================
 @st.cache_resource
 def load_timetable_data(timetable_type):
     file_map = {"工作日":"工作日发车时刻表.csv","周末":"节假日发车时刻表.csv","节假日":"节假日发车时刻表.csv"}
@@ -190,7 +190,7 @@ def load_timetable_data(timetable_type):
     add_log(f"解析完成，共{len(trips)}条班次")
     return trips, None
 
-# ==================== 加载基础数据 ====================
+# ==================== 加载基础CSV数据（原样保留） ====================
 @st.cache_resource
 def load_carbon_data():
     try:
@@ -220,7 +220,9 @@ def load_power_data():
     df.columns = df.columns.str.strip()
     return df, None
 
-# ==================== 24小时统计预测（完全保留你之前的代码，没有任何修改） ====================
+# ==============================================
+# 【重点】统计预测函数 → 完全原样保留，不做任何修改！
+# ==============================================
 def statistical_prediction(weather_info):
     w_now = weather_info["weather"]
     date = weather_info["date"]
@@ -273,7 +275,7 @@ def statistical_prediction(weather_info):
         })
     return pd.DataFrame(res)
 
-# ==================== 客流预测 ====================
+# 客流预测 → 原样保留
 def predict_passenger_flow(date, line_id, is_workday, weather_data):
     hours = list(range(6,22))
     base = 150 if is_workday else 100
@@ -289,59 +291,57 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
         out.append(round(f * (0.9 + np.random.rand()*0.2)))
     return hours, out
 
-# ==================== 核心修改：从【页面已生成的统计预测表】构建小时参数 ====================
+# ==============================================
+# 【新增函数】仅用于优化求解：从「已生成的预测表」解析参数
+# ==============================================
 def build_hour_params_from_pred_table(pred_df):
     """
-    100%从页面上已经生成好的24小时统计预测表中提取参数
-    自动匹配列名，不会报KeyError
-    提取内容：逐时运行时间、电量消耗、是否高峰、客流
+    从页面已生成的24小时统计预测表提取：运行时间、电量、高峰时段
+    仅在【优化求解】环节调用，不触碰统计预测原有逻辑
     """
     hour_params = {}
-    # 自动定位列名
-    run_col = None
+    run_col = "75%运行时间 (min)"
     pwr_col = None
-    for c in pred_df.columns:
-        if "运行时间" in c or "runtime" in c:
-            run_col = c
-        if "电量消耗" in c or "power" in c:
-            pwr_col = c
-    # 兜底默认值
-    if run_col is None:
-        run_col = "75%运行时间 (min)"
-    if pwr_col is None:
-        pwr_col = [c for c in pred_df.columns if "电量消耗" in c][0] if [c for c in pred_df.columns if "电量消耗" in c] else "春季电量消耗"
 
-    # 逐行提取参数
+    # 自动匹配电量列
+    for c in pred_df.columns:
+        if "电量消耗" in c:
+            pwr_col = c
+            break
+    if pwr_col is None:
+        pwr_col = "春季电量消耗"
+
     for _, row in pred_df.iterrows():
         h_str = row["小时"]
         h = int(h_str.split(":")[0])
         period = row["时段类型"]
-        # 提取运行时间
+
+        # 读取预测表内运行时间
         try:
             run_t = float(row[run_col])
         except:
             run_t = 45.0
-        # 提取电量消耗
+        # 读取预测表内电量
         try:
             pct_str = row[pwr_col]
-            pct = float(pct_str.replace("%",""))
         except:
-            pct = 10.0
-        # 提取是否高峰
-        peak = period in ("早高峰","晚高峰")
-        # 客流默认值
+            pct_str = "10.00%"
+        # 判断是否高峰
+        peak = period in ("早高峰", "晚高峰")
         pax_flow = 150 if peak else 100
 
         hour_params[h] = {
             "runtime": run_t,
-            "power_consumption": f"{pct:.2f}%",
+            "power_consumption": pct_str,
             "is_peak": peak,
             "passenger_flow": pax_flow
         }
-    add_log(f"✅ 已从页面统计预测表加载【逐时运行时间、电量、时段】参数，共{len(hour_params)}个小时")
+    add_log("✅ 优化求解：读取页面统计预测表的运行时间、电量参数")
     return hour_params
 
-# ==================== 生成最终排班表（电量扣减+充电标记+真实到达时间） ====================
+# ==============================================
+# 【修改】排班表生成：基于预测表计算电量/到达时间/充电标记
+# ==============================================
 def generate_standard_schedule(raw_schedule, pred_df, initial_battery=100.0, power_threshold=20.0):
     if not raw_schedule:
         return pd.DataFrame()
@@ -353,15 +353,13 @@ def generate_standard_schedule(raw_schedule, pred_df, initial_battery=100.0, pow
     # 车辆排序
     vid_list = sorted(groups.keys(), key=lambda x: int(x.replace("车","")))
 
-    # 构建小时->电量数值映射
+    # 构建小时→电量数值映射
     pwr_map = {}
     pwr_col = None
     for c in pred_df.columns:
         if "电量消耗" in c:
             pwr_col = c
             break
-    if pwr_col is None:
-        pwr_col = [c for c in pred_df.columns if "电量消耗" in c][0]
     for _, row in pred_df.iterrows():
         h = int(row["小时"].split(":")[0])
         val = float(row[pwr_col].replace("%",""))
@@ -405,7 +403,7 @@ def generate_standard_schedule(raw_schedule, pred_df, initial_battery=100.0, pow
             out.append(row)
     return pd.DataFrame(out)
 
-# ==================== 遗传算法算子 ====================
+# ==================== 遗传算法算子（原样保留） ====================
 def tournament(rng, scored, size=3):
     picks = [rng.choice(scored) for _ in range(size)]
     picks.sort(key=lambda x:x[0])
@@ -429,14 +427,16 @@ def mutate(rng, chrom, rate):
 def fitness(sol):
     return sol.objective
 
-# ==================== 优化主函数（核心修改：仅读取页面预测表参数） ====================
+# ==============================================
+# 【修改】优化主函数：读取页面预测表，不再读取原始CSV
+# ==============================================
 def optimize_schedule(pred_flow, veh_cnt, init_bat, solve_limit):
     add_log("开始优化调度")
     st.session_state.convergence_data = []
     st.session_state.greedy_solution = None
     st.session_state.greedy_schedule_data = None
 
-    # 数据校验
+    # 前置校验
     if st.session_state.timetable_data is None:
         st.error("请先读取班次表")
         return None, None
@@ -444,11 +444,11 @@ def optimize_schedule(pred_flow, veh_cnt, init_bat, solve_limit):
         st.error("请先运行【统计预测】生成运行时间、电量表")
         return None, None
 
-    # 核心：100%从页面已生成的统计预测表中提取逐时参数
+    # ========== 核心：读取【页面已生成的统计预测表】解析参数 ==========
     hour_params = build_hour_params_from_pred_table(st.session_state.power_prediction_table)
     trips = st.session_state.timetable_data
 
-    # 调度基础配置
+    # 调度配置（原样保留）
     cfg = Config(
         charger_capacity={"A":40,"B":40},
         rest_minutes=25.0,
@@ -540,7 +540,7 @@ def optimize_schedule(pred_flow, veh_cnt, init_bat, solve_limit):
     add_log("遗传算法求解完毕")
     return best_sol, final_df
 
-# ==================== 页面布局（完全保留之前的逻辑） ====================
+# ==================== 页面布局、按钮逻辑（全部原样保留） ====================
 st.sidebar.title("🚌 智能公交调度系统")
 st.sidebar.divider()
 page = st.sidebar.radio("功能模块", ["📅 今日调度", "📊 数据管理", "📊 统计预测结果", "⚙️ 优化求解", "📋 排班结果"])
