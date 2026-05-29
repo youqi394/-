@@ -168,26 +168,22 @@ def get_time_period(hour):
 
 # -------------------------- 天气获取（支持任意日期） --------------------------
 def get_weather_forecast(date):
-    """
-    优化后的天气获取函数：
-    1. 未来3天内的日期：调用高德API获取真实预报
-    2. 今天及过去的日期：使用默认天气，但保留原日期用于季节判断
-    3. 无论哪种情况，都返回正确的date字段
-    """
     WEATHER_API_KEY = "e088a35c897818780a479973d4623063"
     today = datetime.now().date()
     max_forecast_date = today + timedelta(days=3)
-    
-    # 判断日期是否在API支持的预报范围内（今天到未来3天）
+
     is_in_forecast_range = (date >= today) and (date <= max_forecast_date)
-    
+
     if is_in_forecast_range:
         try:
             city_code = "110000"
-            url = f"https://restapi.amap.com/v3/weather/weatherInfo?city={city_code}&key={WEATHER_API_KEY}&extensions=all"
+            url = (
+                f"https://restapi.amap.com/v3/weather/weatherInfo"
+                f"?city={city_code}&key={WEATHER_API_KEY}&extensions=all"
+            )
             response = requests.get(url, timeout=10)
             data = response.json()
-            
+
             if data.get("status") == "1":
                 target = date.strftime("%Y-%m-%d")
                 for day in data["forecasts"][0]["casts"]:
@@ -199,22 +195,18 @@ def get_weather_forecast(date):
                             "weather": day["dayweather"].strip(),
                             "is_rain": 1 if "雨" in day["dayweather"] else 0
                         }
-                        st.session_state.weather_source = "高德API实时预报"
-                        add_log(f"✅ 从高德API获取到 {target} 的天气：{weather_info['weather']}")
+                        st.session_state.weather_source = f"✅ 高德API预报（{target}）"
+                        add_log(f"✅ 高德API成功：{target} {weather_info['weather']} {weather_info['temp_min']}~{weather_info['temp_max']}℃")
                         return weather_info, None
-                
-                # 如果API返回的预报里没有目标日期（理论上不会发生）
-                add_log(f"⚠️ 高德API未返回 {date.strftime('%Y-%m-%d')} 的预报数据")
+                add_log(f"⚠️ 高德返回无 {target}（超出3天？）")
             else:
-                add_log(f"⚠️ 高德API调用失败：{data.get('info', '未知错误')}")
+                add_log(f"⚠️ 高德API status=0：{data.get('info')}")
         except Exception as e:
-            add_log(f"⚠️ 天气API调用异常：{str(e)}")
-    
-    # 不在预报范围内或API调用失败，使用默认天气，但保留原日期
-    st.session_state.weather_source = "默认天气（历史日期不支持API查询）"
-    add_log(f"ℹ️ {date.strftime('%Y-%m-%d')} 不在预报范围内，使用默认晴天数据")
-    
-    # 关键：返回的date是用户选择的日期，不是今天！
+            add_log(f"⚠️ 高德请求异常：{e}")
+    else:
+        st.session_state.weather_source = "ℹ️ 历史/超3天 → 固定默认值（18~25℃晴）"
+        add_log(f"ℹ️ {date} 不在未来3天 → 用默认天气")
+
     default_weather = {
         "date": date,
         "temp_max": 25,
@@ -222,10 +214,9 @@ def get_weather_forecast(date):
         "weather": "晴",
         "is_rain": 0
     }
-    
     return default_weather, None
 
-# -------------------------- ✅ 读取班次表（适配双向发车格式） --------------------------
+# -------------------------- 读取班次表（适配双向发车格式） --------------------------
 @st.cache_resource
 def load_timetable_data(timetable_type):
     """
@@ -264,7 +255,7 @@ def load_timetable_data(timetable_type):
     add_log(f"✅ 成功加载原始时刻表，共{len(df)}行")
     add_log(f"📌 原始列名：{list(df.columns)}")
     
-    # ✅ 自动识别所有发车时刻列
+    # 自动识别所有发车时刻列
     depart_columns = []
     for col in df.columns:
         normalized = normalize_column_name(col)
@@ -278,7 +269,7 @@ def load_timetable_data(timetable_type):
     
     add_log(f"✅ 识别到 {len(depart_columns)} 个发车方向：{depart_columns}")
     
-    # ✅ 合并所有方向的发车时间
+    # 合并所有方向的发车时间
     all_depart_times = []
     for col in depart_columns:
         times = df[col].dropna().tolist()
@@ -519,7 +510,7 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
         predictions.append(round(flow * (0.9 + np.random.random() * 0.2)))
     return hours, predictions
 
-# -------------------------- ✅ 遗传算法求解器（读取合并后的排班表） --------------------------
+# -------------------------- ✅ 遗传算法求解器（已修复收敛曲线） --------------------------
 def tournament(rng: random.Random, scored: list[tuple[float, list[float], Solution]], size: int = 3) -> list[float]:
     picks = [rng.choice(scored) for _ in range(size)]
     picks.sort(key=lambda item: item[0])
@@ -549,7 +540,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     add_log("开始初始化遗传算法求解器")
     st.session_state.convergence_data = []
     
-    # ✅ 第一步：检查两个表是否已经生成
+    # 检查两个表是否已经生成
     if st.session_state.timetable_data is None:
         st.error("❌ 请先点击「读取班次表」加载排班数据")
         add_log("❌ 遗传算法求解失败：未加载排班表")
@@ -562,7 +553,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     
     add_log("✅ 成功读取页面生成的排班表和统计预测表")
     
-    # 遗传算法参数（和你提供的代码一致）
+    # 遗传算法参数
     POPULATION_SIZE = 56
     GENERATIONS = 90
     ELITE_SIZE = 6
@@ -577,7 +568,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
         max_late_minutes=5.0,
     )
     
-    # ✅ 第二步：从统计预测表提取小时参数
+    # 从统计预测表提取小时参数
     hour_params = {}
     pred_df = st.session_state.power_prediction_table
     
@@ -598,7 +589,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     
     add_log(f"✅ 成功从统计预测表提取 {len(hour_params)} 个小时的参数")
     
-    # ✅ 第三步：从合并后的排班表提取任务列表
+    # 从合并后的排班表提取任务列表
     timetable_df = st.session_state.timetable_data
     trips = []
     
@@ -657,10 +648,13 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
         scored.sort(key=lambda item: item[0])
         
         # 更新最优解
-        if best_solution is None or scored[0][0] < fitness(best_solution):
-            best_solution = scored[0][2]
-            best_chromosome = scored[0][1][:]
-            st.session_state.convergence_data.append((gen, best_solution.objective))
+        current_best = scored[0]
+        if best_solution is None or current_best[0] < fitness(best_solution):
+            best_solution = current_best[2]
+            best_chromosome = current_best[1][:]
+        
+        # ✅ 关键修复：每一代都记录收敛数据
+        st.session_state.convergence_data.append((gen, best_solution.objective))
         
         best = scored[0][2]
         feasible_count = sum(1 for _, _, sol in scored if sol.feasible)
@@ -694,7 +688,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     add_log(f"✅ 遗传算法求解完成，最优目标值：{best_solution.objective:.2f}")
     st.session_state.current_objective = best_solution.objective
     
-    # ✅ 第四步：从最优解生成标准排班表
+    # 从最优解生成标准排班表
     schedule = []
     
     # 优先使用遗传算法返回的真实排班结果
@@ -751,7 +745,7 @@ page = st.sidebar.radio("功能模块", ["📅 今日调度", "📊 数据管理
 st.sidebar.divider()
 st.sidebar.info("智能公交调度系统")
 
-# -------------------------- 今日调度（✅ 恢复导出排班结果按钮） --------------------------
+# -------------------------- 今日调度 --------------------------
 if page == "📅 今日调度":
     st.header("🚌 智能公交调度", divider="blue")
     col1, col2 = st.columns(2)
@@ -960,7 +954,7 @@ elif page == "⚙️ 优化求解":
     else:
         st.info("请先在「今日调度」页面点击「开始优化求解」")
 
-# -------------------------- 排班结果（✅ 保留导出按钮） --------------------------
+# -------------------------- 排班结果 --------------------------
 elif page == "📋 排班结果":
     st.header("📋 排班结果", divider="blue")
     if st.session_state.schedule_data is not None:
