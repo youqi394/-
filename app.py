@@ -223,13 +223,17 @@ def get_weather_forecast(date):
     }
     return default_weather, None
 
-# -------------------------- ✅ 修复：通用方向识别逻辑 --------------------------
+# -------------------------- ✅ 终极修复：双向列名位置优先识别 --------------------------
 @st.cache_resource
 def load_timetable_data(timetable_type):
     """
     根据选择的班次类型读取对应的时刻表文件
-    保留每个发车时间的方向信息（四惠/老山）
-    只要列名包含"四惠"就识别为四惠方向，包含"老山"就识别为老山方向
+    完美匹配双向列名格式：(A-B)发车时刻 → A方向发车
+    支持所有列名格式：
+    1. (四惠枢纽站-老山公交场站)发车时刻 → 四惠方向
+    2. (老山公交场站-四惠枢纽站)发车时刻 → 老山方向
+    3. 四惠发车时刻 → 四惠方向
+    4. 老山发车时刻 → 老山方向
     """
     # 映射班次类型到文件名
     file_map = {
@@ -267,8 +271,16 @@ def load_timetable_data(timetable_type):
     for col in df.columns:
         normalized = normalize_column_name(col)
         if "发车时刻" in normalized or "发车时间" in normalized:
-            # 通用方向识别
-            if "四惠" in col:
+            # 终极修复：双向列名位置优先判断
+            if "四惠" in col and "老山" in col:
+                # 两个站都在列名里，看哪个在前面
+                sihui_pos = col.index("四惠")
+                laoshan_pos = col.index("老山")
+                if sihui_pos < laoshan_pos:
+                    direction = "四惠"
+                else:
+                    direction = "老山"
+            elif "四惠" in col:
                 direction = "四惠"
             elif "老山" in col:
                 direction = "老山"
