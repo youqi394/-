@@ -38,7 +38,7 @@ class Solution:
         if self.schedule is None:
             self.schedule = []
 
-# -------------------------- 加载实例函数 --------------------------
+# -------------------------- 加载实例函数（兼容原有代码，无修改） --------------------------
 def load_instance(
     data_dir: Path,
     schedule_file: str,
@@ -100,19 +100,20 @@ def load_instance(
     
     return schedule_data, hour_params
 
-# -------------------------- 统一解码函数（已修复KeyError+场站位置约束） --------------------------
+# -------------------------- 核心修改：统一解码函数（从统计预测表读取运行时间+电量） --------------------------
 def decode_with_random_keys(
     trips: List[Dict[str, Any]],
-    hour_params: Dict[int, Dict[str, Any]],
+    hour_params: Dict[int, Dict[str, Any]],  # 直接使用app.py从统计预测表构建的参数
     config: Config,
-    genes: List[float] = None,  # 贪心算法不需要传genes
+    genes: List[float] = None,
     top_k: int = 5,
     algorithm: str = "genetic",
 ) -> Solution:
     """
-    统一解码函数：同时支持贪心和遗传算法
-    - greedy：按发车时间原始顺序排序，优先匹配场站位置分配车辆
-    - genetic：按基因值排序，优先匹配场站位置分配车辆
+    关键修改说明：
+    1. 不再从trip对象中读取runtime，而是根据发车小时从hour_params（统计预测表数据）中获取
+    2. 电量消耗也直接从统计预测表中读取，和你点击「统计预测」后生成的表格100%匹配
+    3. 到达时间 = 发车时间 + 预测表中的75%运行时间，不再固定45分钟
     """
     # 1. 排序逻辑：根据算法类型选择
     if algorithm == "greedy":
@@ -131,8 +132,7 @@ def decode_with_random_keys(
     vehicle_schedule = []
     current_time = {}
     vehicle_trip_count = {}
-    # 新增：追踪每辆车当前所在场站
-    vehicle_station = {}
+    vehicle_station = {}  # 追踪每辆车当前所在场站，保证往返闭环
     
     for trip in sorted_trips:
         depart_hour = trip["depart_hour"]
@@ -140,17 +140,25 @@ def decode_with_random_keys(
         depart_total = depart_hour * 60 + depart_minute
         direction = trip["direction"]  # 当前任务的发车场站
         
-        runtime = trip.get("runtime", 45.0)
+        # ========== 核心：从统计预测表参数中读取运行时间+电量 ==========
+        # hour_params[depart_hour] 对应你统计预测表中该小时的所有数据
+        param = hour_params.get(depart_hour, {})
+        runtime = param.get("runtime", 45.0)  # 75%运行时间(min)，来自你截图中的87.6492等数值
+        power_consumption = param.get("power_consumption", "10%")  # 该小时电量消耗，来自你截图中的23.00%
+        passenger_flow = param.get("passenger_flow", 100)
+        
+        # 用预测表的运行时间计算到达时间
         arrive_total = depart_total + runtime
         arrive_hour = int(arrive_total // 60)
         arrive_minute = int(arrive_total % 60)
         arrive_time = f"{arrive_hour:02d}:{arrive_minute:02d}"
         
-        # ✅ 修复：将runtime添加到trip对象，解决KeyError
+        # 把预测的runtime和电量存到trip里，方便后续排班使用
         trip["runtime"] = runtime
+        trip["power_consumption"] = power_consumption
         
         assigned = False
-        # 优先分配与当前场站匹配的空闲车辆
+        # 优先分配与当前场站匹配的空闲车辆，保证往返闭环
         for i, v in enumerate(vehicles):
             if (current_time.get(i, 0) + config.rest_minutes <= depart_total 
                 and vehicle_station.get(i, "四惠") == direction):
@@ -162,14 +170,14 @@ def decode_with_random_keys(
                     "arrive_time": arrive_time,
                     "depart_hour": depart_hour,
                     "depart_minute": depart_minute,
-                    "passenger_flow": trip.get("passenger_flow", 100),
+                    "passenger_flow": passenger_flow,
                     "runtime": runtime,
-                    "direction": trip.get("direction", "未知"),
-                    "power_consumption": trip.get("power_consumption", "10%"),
+                    "direction": direction,
+                    "power_consumption": power_consumption,
                 })
                 current_time[i] = arrive_total
                 vehicle_trip_count[i] = vehicle_trip_count.get(i, 0) + 1
-                # 更新车辆到站位置
+                # 更新车辆到站位置，保证下一趟匹配正确场站
                 vehicle_station[i] = "老山" if direction == "四惠" else "四惠"
                 assigned = True
                 break
@@ -183,17 +191,17 @@ def decode_with_random_keys(
                 "arrive_time": arrive_time,
                 "depart_hour": depart_hour,
                 "depart_minute": depart_minute,
-                "passenger_flow": trip.get("passenger_flow", 100),
+                "passenger_flow": passenger_flow,
                 "runtime": runtime,
-                "direction": trip.get("direction", "未知"),
-                "power_consumption": trip.get("power_consumption", "10%"),
+                "direction": direction,
+                "power_consumption": power_consumption,
             })
             current_time[len(vehicles)-1] = arrive_total
             vehicle_trip_count[len(vehicles)-1] = 1
-            # 新车初始场站：任务是四惠发车则初始在四惠，反之在老山
+            # 新车初始场站：和发车场站一致
             vehicle_station[len(vehicles)-1] = "老山" if direction == "四惠" else "四惠"
     
-    # 3. 目标函数
+    # 3. 目标函数计算（保留原有逻辑，兼容你的app.py）
     vehicle_cost = len(vehicles) * 1000
     avg_trips = len(trips) / len(vehicles) if len(vehicles) > 0 else 0
     balance_cost = 0.0
@@ -210,7 +218,7 @@ def decode_with_random_keys(
     idle_cost = total_idle * 0.5
     objective = vehicle_cost + balance_cost + peak_penalty + idle_cost
     
-    # 4. 构建Solution对象
+    # 4. 构建Solution对象，和原有结构完全兼容
     solution = Solution(
         feasible=True,
         objective=round(objective, 4),
@@ -222,7 +230,7 @@ def decode_with_random_keys(
     
     return solution
 
-# -------------------------- 工具函数 --------------------------
+# -------------------------- 工具函数（无修改，兼容原有代码） --------------------------
 def solution_summary_dict(solution: Solution) -> Dict[str, Any]:
     """生成解的摘要信息"""
     return {
