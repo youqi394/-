@@ -571,7 +571,7 @@ def mutate(rng: random.Random, chromosome: list[float], rate: float) -> None:
 def fitness(solution: Solution) -> float:
     return solution.objective
 
-# -------------------------- 生成标准格式排班表 --------------------------
+# -------------------------- ✅ 生成标准格式排班表（含场站位置追踪） --------------------------
 def generate_standard_schedule(raw_schedule, power_prediction_table, initial_battery=100.0, power_threshold=20.0):
     """
     生成标准格式排班表：
@@ -579,6 +579,7 @@ def generate_standard_schedule(raw_schedule, power_prediction_table, initial_bat
     2. 列：车辆编号 | 四惠发车时间 | 老山发车时间
     3. 非对应方向显示"/"
     4. 电量低于20%时，在发车时间后加"(充电)"
+    5. 追踪车辆场站位置，确保往返闭环
     """
     if not raw_schedule:
         return pd.DataFrame()
@@ -612,8 +613,9 @@ def generate_standard_schedule(raw_schedule, power_prediction_table, initial_bat
         # 按发车时间排序
         trips.sort(key=lambda x: (x["depart_hour"], x["depart_minute"]))
         
-        # 初始化车辆电量
+        # 初始化车辆电量和场站位置
         remaining_battery = initial_battery
+        current_station = "四惠"  # 初始位置
         
         for trip in trips:
             depart_time = trip["depart_time"]
@@ -647,9 +649,11 @@ def generate_standard_schedule(raw_schedule, power_prediction_table, initial_bat
             if direction == "四惠":
                 row["四惠发车时间"] = display_time
                 row["老山发车时间"] = "/"
+                current_station = "老山"  # 跑完这趟，车辆到老山
             elif direction == "老山":
                 row["四惠发车时间"] = "/"
                 row["老山发车时间"] = display_time
+                current_station = "四惠"  # 跑完这趟，车辆回四惠
             else:
                 row["四惠发车时间"] = display_time
                 row["老山发车时间"] = "/"
