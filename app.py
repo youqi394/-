@@ -569,7 +569,11 @@ def optimize_genetic_full(trips, hour_params, config, initial_battery, power_pre
     """执行遗传算法（带Gap收敛终止，固定默认参数）"""
     add_log("🔄 运行精确求解（遗传算法）")
     run_started = time.perf_counter()
-    rng = random.Random(20260528)
+    import time
+# 用整数时间戳作为种子，每次运行都不同
+    rng = random.Random(int(time.time()))
+# 或者用更精确的纳秒时间戳（完全避免重复）
+# rng = random.Random(time.time_ns())
     n = len(trips)
     pop_size = 56
     elite_num = 6
