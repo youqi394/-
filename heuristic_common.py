@@ -7,12 +7,12 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# -------------------------- 完全保留你原有的常量定义 --------------------------
+# -------------------------- 常量定义 --------------------------
 DATA_DIR = Path(__file__).resolve().parent / "data"
 DEFAULT_SCHEDULE = "节假日发车时刻表.csv"
 DEFAULT_HOURLY = "电量消耗.csv"
 
-# -------------------------- 完全保留你原有的数据类定义 --------------------------
+# -------------------------- 数据类定义 --------------------------
 @dataclass
 class Config:
     """遗传算法配置参数"""
@@ -38,7 +38,7 @@ class Solution:
         if self.schedule is None:
             self.schedule = []
 
-# -------------------------- 完全保留你原有的load_instance函数 --------------------------
+# -------------------------- 加载实例函数 --------------------------
 def load_instance(
     data_dir: Path,
     schedule_file: str,
@@ -100,7 +100,7 @@ def load_instance(
     
     return schedule_data, hour_params
 
-# -------------------------- ✅ 已修复：添加runtime字段到trip对象 --------------------------
+# -------------------------- 统一解码函数（已修复KeyError） --------------------------
 def decode_with_random_keys(
     trips: List[Dict[str, Any]],
     hour_params: Dict[int, Dict[str, Any]],
@@ -111,7 +111,7 @@ def decode_with_random_keys(
 ) -> Solution:
     """
     统一解码函数：同时支持贪心和遗传算法
-    - greedy：按发车时间原始顺序排序，贪心分配车辆（和你给的贪心代码完全一致）
+    - greedy：按发车时间原始顺序排序，贪心分配车辆
     - genetic：按基因值排序，贪心分配车辆
     """
     # 1. 排序逻辑：根据算法类型选择
@@ -126,7 +126,7 @@ def decode_with_random_keys(
         indexed_trips.sort(key=lambda x: genes[x[0]])
         sorted_trips = [trip for idx, trip in indexed_trips]
     
-    # 2. 完全保留你原有的贪心分配逻辑
+    # 2. 贪心分配车辆
     vehicles = []
     vehicle_schedule = []
     current_time = {}
@@ -143,10 +143,10 @@ def decode_with_random_keys(
         arrive_minute = int(arrive_total % 60)
         arrive_time = f"{arrive_hour:02d}:{arrive_minute:02d}"
         
-        # ✅ 关键修复：将runtime添加到trip对象中，确保vehicles列表里的trip有runtime字段
+        # ✅ 修复：将runtime添加到trip对象，解决KeyError
         trip["runtime"] = runtime
         
-        # 找可用车辆（完全保留你原有的逻辑）
+        # 找可用车辆
         assigned = False
         for i, v in enumerate(vehicles):
             if current_time.get(i, 0) + config.rest_minutes <= depart_total:
@@ -160,7 +160,7 @@ def decode_with_random_keys(
                     "depart_minute": depart_minute,
                     "passenger_flow": trip.get("passenger_flow", 100),
                     "runtime": runtime,
-                    "direction": trip.get("direction", "未知"),  # 保留方向信息
+                    "direction": trip.get("direction", "未知"),
                     "power_consumption": trip.get("power_consumption", "10%"),
                 })
                 current_time[i] = arrive_total
@@ -169,7 +169,7 @@ def decode_with_random_keys(
                 break
         
         if not assigned:
-            # 分配新车（完全保留你原有的逻辑）
+            # 分配新车
             vehicles.append([trip])
             vehicle_schedule.append({
                 "vehicle_id": f"车{len(vehicles):02d}",
@@ -179,13 +179,13 @@ def decode_with_random_keys(
                 "depart_minute": depart_minute,
                 "passenger_flow": trip.get("passenger_flow", 100),
                 "runtime": runtime,
-                "direction": trip.get("direction", "未知"),  # 保留方向信息
+                "direction": trip.get("direction", "未知"),
                 "power_consumption": trip.get("power_consumption", "10%"),
             })
             current_time[len(vehicles)-1] = arrive_total
             vehicle_trip_count[len(vehicles)-1] = 1
     
-    # 3. 统一目标函数（和遗传算法完全一致，保证结果可比）
+    # 3. 目标函数
     vehicle_cost = len(vehicles) * 1000
     avg_trips = len(trips) / len(vehicles) if len(vehicles) > 0 else 0
     balance_cost = 0.0
@@ -202,7 +202,7 @@ def decode_with_random_keys(
     idle_cost = total_idle * 0.5
     objective = vehicle_cost + balance_cost + peak_penalty + idle_cost
     
-    # 4. 完全保留你原有的Solution构建逻辑
+    # 4. 构建Solution对象
     solution = Solution(
         feasible=True,
         objective=round(objective, 4),
@@ -214,7 +214,7 @@ def decode_with_random_keys(
     
     return solution
 
-# -------------------------- 完全保留你原有的工具函数 --------------------------
+# -------------------------- 工具函数 --------------------------
 def solution_summary_dict(solution: Solution) -> Dict[str, Any]:
     """生成解的摘要信息"""
     return {
