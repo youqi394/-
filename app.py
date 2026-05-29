@@ -557,72 +557,26 @@ def mutate(rng: random.Random, chromosome: list[float], rate: float) -> None:
 def fitness(solution: Solution) -> float:
     return solution.objective
 
-# ==================== 优化主函数（仅使用Gap作为终止条件 + 内置安全上限） ====================
-def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_limit,
-                      pop_size, elite_num, mut_rate, top_k, seed_val,
-                      gap_threshold, stable_generations):
-    add_log("开始初始化双算法求解器")
-    st.session_state.convergence_data = []
-    st.session_state.ga_history = []
-    st.session_state.best_chromosome = None
-    st.session_state.greedy_solution = None
-    st.session_state.greedy_schedule_data = None
-    st.session_state.greedy_objective = 0.0
+# ==================== 优化主函数（精简版，支持两种求解方式） ====================
+def optimize_greedy_only(trips, hour_params, config, initial_battery, power_prediction_table):
+    """仅执行贪心算法"""
+    add_log("🔄 运行粗略求解（贪心算法）")
+    greedy_solution = decode_with_random_keys(trips, hour_params, config, algorithm="greedy")
+    greedy_df = generate_standard_schedule(greedy_solution.schedule, power_prediction_table, initial_battery, 20.0)
+    return greedy_solution, greedy_df
 
-    # 数据校验（修复DataFrame判空报错）
-    if st.session_state.timetable_data is None:
-        st.error("❌ 请先点击「读取班次表」加载排班数据")
-        add_log("❌ 求解失败：未加载排班表")
-        return None, None
-    if st.session_state.power_prediction_table is None or st.session_state.power_prediction_table.empty:
-        st.error("❌ 请先点击「运行统计预测」生成统计数据")
-        add_log("❌ 求解失败：未生成统计预测表")
-        return None, None
-
-    add_log("✅ 成功读取页面生成的排班表和统计预测表")
-    hour_params = build_hour_params_from_pred_table(st.session_state.power_prediction_table)
-    trips = st.session_state.timetable_data
-
-    # 调度基础配置
-    config = Config(
-        charger_capacity={"A": 40, "B": 40},
-        rest_minutes=25.0,
-        max_late_minutes=5.0,
-    )
-
-    # -------------------------- 第一步：贪心算法（逻辑不变） --------------------------
-    add_log("🔄 开始运行贪心算法（粗略解）")
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    status_text.text("正在运行贪心算法（粗略解）...")
-    progress_bar.progress(5)
-
-    greedy_solution = decode_with_random_keys(
-        trips,
-        hour_params,
-        config,
-        algorithm="greedy"
-    )
-    greedy_df = generate_standard_schedule(
-        greedy_solution.schedule,
-        st.session_state.power_prediction_table,
-        initial_battery=initial_battery,
-        power_threshold=20.0
-    )
-    st.session_state.greedy_solution = greedy_solution
-    st.session_state.greedy_schedule_data = greedy_df
-    st.session_state.greedy_objective = greedy_solution.objective
-    add_log(f"✅ 贪心算法求解完成，目标值：{greedy_solution.objective:.2f}")
-    progress_bar.progress(10)
-    status_text.text("贪心算法完成，开始运行遗传算法（精确解）...")
-
-    # -------------------------- 第二步：遗传算法（仅Gap终止，无固定迭代数） --------------------------
-    add_log("🔄 开始运行遗传算法（以Gap收敛为唯一终止条件）")
+def optimize_genetic_full(trips, hour_params, config, initial_battery, power_prediction_table):
+    """执行遗传算法（带Gap收敛终止，固定默认参数）"""
+    add_log("🔄 运行精确求解（遗传算法）")
     run_started = time.perf_counter()
-    rng = random.Random(seed_val)
+    rng = random.Random(20260528)
     n = len(trips)
-
-    # 【内置安全兜底：最大1000代，防止极端死循环，页面不展示】
+    pop_size = 56
+    elite_num = 6
+    mut_rate = 0.055
+    top_k = 5
+    gap_threshold = 0.001
+    stable_generations = 10
     MAX_SAFE_ITER = 1000
 
     # 种群初始化
@@ -637,36 +591,20 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     last_best_obj = None
     current_gen = 0
 
-    # ========== 无限while循环，仅靠Gap收敛停止 ==========
     while True:
-        # 进度条（基于安全最大迭代数计算）
-        progress = 10 + int((current_gen / MAX_SAFE_ITER) * 90)
-        progress_bar.progress(min(progress, 100))
-        status_text.text(f"遗传算法进化中... 当前第 {current_gen} 代")
-
         scored: list[tuple[float, list[float], Solution]] = []
         for chrom in population:
-            sol = decode_with_random_keys(
-                trips,
-                hour_params,
-                config,
-                genes=chrom,
-                top_k=top_k,
-                algorithm="genetic",
-            )
+            sol = decode_with_random_keys(trips, hour_params, config, genes=chrom, top_k=top_k, algorithm="genetic")
             scored.append((fitness(sol), chrom, sol))
         scored.sort(key=lambda item: item[0])
 
-        # 更新全局最优 & 计算收敛Gap
         current_best = scored[0]
         current_obj = current_best[0]
         gap = 0.0
-
         if best_solution is not None:
             gap = abs(current_obj - fitness(best_solution)) / fitness(best_solution)
             st.session_state.current_gap = gap
 
-        # 更新最优解
         if best_solution is None or current_obj < fitness(best_solution):
             best_solution = current_best[2]
             best_chromosome = current_best[1][:]
@@ -677,8 +615,6 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
 
         best = scored[0][2]
         feasible_count = sum(1 for _, _, sol in scored if sol.feasible)
-
-        # 记录收敛数据
         st.session_state.convergence_data.append((current_gen, best.objective))
         ga_history.append({
             "generation": current_gen,
@@ -686,27 +622,18 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
             "best_feasible": best.feasible,
             "best_vehicles": best.vehicles_used,
             "best_gap": gap,
-            "best_late_min": best.total_late_min,
             "feasible_count": feasible_count
         })
 
-        add_log(
-            f"gen={current_gen:03d} best={best.objective:.6f} gap={gap:.6f} "
-            f"stable={stable_count}/{stable_generations} feasible={best.feasible} vehicles={best.vehicles_used}"
-        )
+        add_log(f"gen={current_gen:03d} best={best.objective:.6f} gap={gap:.6f} stable={stable_count}/{stable_generations}")
 
-        # ===================== 核心终止条件：仅判断Gap =====================
-        # 条件1：连续指定代数 + Gap小于阈值 → 收敛，停止
         if stable_count >= stable_generations and gap < gap_threshold:
-            add_log(f"✅ 收敛完成：连续{stable_generations}代 Gap < {gap_threshold}，算法终止")
+            add_log(f"✅ 遗传算法收敛完成，连续{stable_generations}代Gap < {gap_threshold}，算法终止")
             break
-
-        # 条件2：安全兜底：达到最大安全迭代数，强制停止（防死循环）
         if current_gen >= MAX_SAFE_ITER:
             add_log(f"⚠️ 达到安全最大迭代{MAX_SAFE_ITER}代，强制终止")
             break
 
-        # 生成下一代种群
         next_population: list[list[float]] = [chrom[:] for _, chrom, _ in scored[: elite_num]]
         while len(next_population) < pop_size:
             left = tournament(rng, scored)
@@ -715,49 +642,18 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
             mutate(rng, child, mut_rate)
             next_population.append(child)
         population = next_population
-
         current_gen += 1
 
-    # 算法收尾
     total_runtime_sec = time.perf_counter() - run_started
-    if best_solution is None or best_chromosome is None:
-        progress_bar.empty()
-        status_text.empty()
-        st.error("❌ 遗传算法未找到可行解")
-        add_log("❌ 遗传算法未找到可行解")
-        return greedy_solution, greedy_df
-
     best_solution.runtime_sec = total_runtime_sec
-    best_solution.metadata["ga_parameters"] = {
-        "population": pop_size,
-        "elite": elite_num,
-        "mutation_rate": mut_rate,
-        "top_k": top_k,
-        "seed": seed_val,
-        "gap_threshold": gap_threshold,
-        "stable_generations": stable_generations,
-        "max_safe_iter": MAX_SAFE_ITER
-    }
-
+    best_solution.metadata["ga_parameters"] = {"population": pop_size, "elite": elite_num, "mutation_rate": mut_rate, "seed": 20260528}
     st.session_state.ga_history = ga_history
     st.session_state.best_chromosome = best_chromosome
-    add_log(f"✅ 遗传算法求解完成，最优目标值：{best_solution.objective:.2f}，运行耗时：{total_runtime_sec:.2f}s")
     st.session_state.current_objective = best_solution.objective
-
-    # 生成最终排班表
-    df = generate_standard_schedule(
-        best_solution.schedule,
-        st.session_state.power_prediction_table,
-        initial_battery=initial_battery,
-        power_threshold=20.0
-    )
-    add_log(f"✅ 生成标准格式排班表，共{len(df)}个班次")
-
-    progress_bar.empty()
-    status_text.empty()
+    df = generate_standard_schedule(best_solution.schedule, power_prediction_table, initial_battery, 20.0)
     return best_solution, df
 
-# ==================== 侧边栏 & 页面布局（移除「最大迭代代数」） ====================
+# ==================== 侧边栏 & 页面布局 ====================
 st.sidebar.title("🚌 智能公交调度系统")
 st.sidebar.markdown("""<style>[data-testid="stSidebar"] {background-color: #f0f5fa;}</style>""", unsafe_allow_html=True)
 st.sidebar.divider()
@@ -765,7 +661,7 @@ page = st.sidebar.radio("功能模块", ["📅 今日调度", "📊 数据管理
 st.sidebar.divider()
 st.sidebar.info("智能公交调度系统")
 
-# -------------------------- 今日调度页面 --------------------------
+# -------------------------- 今日调度页面（已简化，去掉所有遗传参数配置） --------------------------
 if page == "📅 今日调度":
     st.header("🚌 智能公交调度", divider="blue")
     col1, col2 = st.columns(2)
@@ -778,32 +674,11 @@ if page == "📅 今日调度":
         initial_battery = st.number_input("初始电量（%）", 0, 100, 100)
         solve_time = st.number_input("求解时间上限（秒）", 60, 3600, 300)
 
-    # 遗传算法参数配置：已移除【最大迭代代数】
+    # ========== 仅新增：求解方式选择框 ==========
     st.divider()
-    st.subheader("🧬 遗传算法参数配置（仅Gap控制收敛）")
-    g1, g2, g3, g4 = st.columns(4)
-    with g1:
-        pop_size = st.number_input("种群大小", 10, 200, 56)
-    with g2:
-        elite_num = st.number_input("精英个体数", 1, 20, 6)
-    with g3:
-        mut_rate = st.number_input("变异概率", 0.01, 0.5, 0.055, step=0.001)
-    with g4:
-        top_k = st.number_input("Top-K", 1, 10, 5)
-
-    g5, g6 = st.columns(2)
-    with g5:
-        seed_val = st.number_input("随机种子", 0, 99999999, 20260528)
-    with g6:
-        pass
-
-    g7, g8 = st.columns(2)
-    with g7:
-        gap_threshold = st.number_input("收敛Gap阈值", 0.0001, 0.1, 0.001, step=0.0001, format="%.4f")
-    with g8:
-        stable_generations = st.number_input("连续收敛判定代数", 5, 50, 10)
-
+    solve_mode = st.selectbox("优化求解方式", ["粗略求解（贪心算法）", "精确求解（遗传算法）"])
     st.divider()
+
     btn1, btn2, btn3, btn4, btn5 = st.columns(5, gap="small")
     with btn1:
         if st.button("读取班次表"):
@@ -850,31 +725,54 @@ if page == "📅 今日调度":
 
     with btn4:
         if st.button("开始优化求解"):
-            # 安全判断DataFrame是否为空
+            # 安全判断
             predictions_ok = st.session_state.predictions is not None and len(st.session_state.predictions) > 0
             table_ok = st.session_state.power_prediction_table is not None and not st.session_state.power_prediction_table.empty
             if not predictions_ok or not table_ok:
                 st.warning("⚠️ 请先运行统计预测")
             else:
                 st.info("🔄 求解中...")
-                model, df = optimize_schedule(
-                    st.session_state.predictions,
-                    vehicle_count,
-                    initial_battery,
-                    solve_time,
-                    pop_size,
-                    elite_num,
-                    mut_rate,
-                    top_k,
-                    seed_val,
-                    gap_threshold,
-                    stable_generations
-                )
-                st.session_state.optimization_result = model
-                st.session_state.schedule_data = df
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
+                hour_params = build_hour_params_from_pred_table(st.session_state.power_prediction_table)
+                trips = st.session_state.timetable_data
+                config = Config(charger_capacity={"A": 40, "B": 40}, rest_minutes=25.0, max_late_minutes=5.0)
+
+                # 根据选择执行对应算法
+                if solve_mode == "粗略求解（贪心算法）":
+                    status_text.text("正在运行粗略求解（贪心算法）...")
+                    progress_bar.progress(10)
+                    greedy_sol, greedy_df = optimize_greedy_only(trips, hour_params, config, initial_battery, st.session_state.power_prediction_table)
+                    st.session_state.greedy_solution = greedy_sol
+                    st.session_state.greedy_schedule_data = greedy_df
+                    st.session_state.greedy_objective = greedy_sol.objective
+                    st.session_state.optimization_result = greedy_sol
+                    st.session_state.schedule_data = greedy_df
+                    st.session_state.current_objective = greedy_sol.objective
+                    progress_bar.progress(100)
+                    status_text.empty()
+                    st.success("✅ 粗略求解完成！")
+                else:
+                    # 先跑贪心，再跑遗传
+                    status_text.text("正在运行贪心算法（粗略解）...")
+                    progress_bar.progress(5)
+                    greedy_sol, greedy_df = optimize_greedy_only(trips, hour_params, config, initial_battery, st.session_state.power_prediction_table)
+                    st.session_state.greedy_solution = greedy_sol
+                    st.session_state.greedy_schedule_data = greedy_df
+                    st.session_state.greedy_objective = greedy_sol.objective
+
+                    status_text.text("正在运行遗传算法（精确解）...")
+                    progress_bar.progress(10)
+                    gen_sol, gen_df = optimize_genetic_full(trips, hour_params, config, initial_battery, st.session_state.power_prediction_table)
+                    st.session_state.optimization_result = gen_sol
+                    st.session_state.schedule_data = gen_df
+                    progress_bar.progress(100)
+                    status_text.empty()
+                    st.success("✅ 精确求解完成！")
+
                 st.session_state.progress = 90
                 st.session_state.current_stage = "优化求解完成"
-                st.success("✅ 优化求解完成！")
 
     with btn5:
         if st.button("导出排班结果"):
@@ -883,14 +781,10 @@ if page == "📅 今日调度":
                 csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
                 st.download_button("📥 下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
                 st.download_button("📥 下载精确解排班表", csv_genetic, f"公交排班表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
-                # 导出迭代历史、最优染色体
                 if st.session_state.ga_history:
                     hist_df = pd.DataFrame(st.session_state.ga_history)
                     csv_hist = hist_df.to_csv(index=False, encoding="utf-8-sig")
                     st.download_button("📥 下载遗传迭代历史", csv_hist, f"GA_历史记录_{dispatch_date.strftime('%Y%m%d')}.csv")
-                if st.session_state.best_chromosome:
-                    json_chrom = json.dumps(st.session_state.best_chromosome, ensure_ascii=False, indent=2)
-                    st.download_button("📥 下载最优染色体", json_chrom, f"GA_最优染色体_{dispatch_date.strftime('%Y%m%d')}.json")
                 st.session_state.progress = 100
                 st.session_state.current_stage = "全部完成"
             else:
