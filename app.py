@@ -510,7 +510,7 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
         predictions.append(round(flow * (0.9 + np.random.random() * 0.2)))
     return hours, predictions
 
-# -------------------------- ✅ 遗传算法求解器（已修复收敛曲线） --------------------------
+# -------------------------- ✅ 已优化：遗传算法参数 --------------------------
 def tournament(rng: random.Random, scored: list[tuple[float, list[float], Solution]], size: int = 3) -> list[float]:
     picks = [rng.choice(scored) for _ in range(size)]
     picks.sort(key=lambda item: item[0])
@@ -553,13 +553,13 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     
     add_log("✅ 成功读取页面生成的排班表和统计预测表")
     
-    # 遗传算法参数
-    POPULATION_SIZE = 56
-    GENERATIONS = 90
-    ELITE_SIZE = 6
-    MUTATION_RATE = 0.055
+    # ✅ 优化后的遗传算法参数
+    POPULATION_SIZE = 80  # 扩大种群规模，增加多样性
+    GENERATIONS = 120     # 增加迭代次数，给算法更多进化时间
+    ELITE_SIZE = 4        # 减少精英保留，给新解更多机会
+    MUTATION_RATE = 0.12  # 提高变异率，防止早熟收敛
     TOP_K = 5
-    SEED = 20260528
+    SEED = 20260529       # 更换随机种子，避免陷入局部最优
     
     # 配置参数
     config = Config(
@@ -653,7 +653,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
             best_solution = current_best[2]
             best_chromosome = current_best[1][:]
         
-        # ✅ 关键修复：每一代都记录收敛数据
+        # 每一代都记录收敛数据
         st.session_state.convergence_data.append((gen, best_solution.objective))
         
         best = scored[0][2]
