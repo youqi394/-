@@ -4,10 +4,16 @@ import pandas as pd
 import numpy as np
 import time
 import requests
-import gurobipy as gp
-from gurobipy import GRB
+import random
 from datetime import datetime, timedelta
 import re
+
+# -------------------------- 遗传算法导入 --------------------------
+from heuristic_common import (
+    Config,
+    Solution,
+    decode_with_random_keys,
+)
 
 # -------------------------- 全局配置 --------------------------
 st.set_page_config(
@@ -485,113 +491,246 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
         predictions.append(round(flow * (0.9 + np.random.random() * 0.2)))
     return hours, predictions
 
-# -------------------------- ✅ 终极修复：Streamlit Cloud专用优化求解 --------------------------
+# -------------------------- ✅ 遗传算法求解器（完全读取页面生成的两个表） --------------------------
+def tournament(rng: random.Random, scored: list[tuple[float, list[float], Solution]], size: int = 3) -> list[float]:
+    picks = [rng.choice(scored) for _ in range(size)]
+    picks.sort(key=lambda item: item[0])
+    return picks[0][1]
+
+def crossover(rng: random.Random, left: list[float], right: list[float]) -> list[float]:
+    if len(left) != len(right):
+        raise ValueError("Chromosome length mismatch.")
+    if len(left) <= 2:
+        return left[:]
+    a = rng.randrange(1, len(left) - 1)
+    b = rng.randrange(a, len(left))
+    child = left[:a] + right[a:b] + left[b:]
+    if rng.random() < 0.25:
+        child = [right[i] if rng.random() < 0.5 else child[i] for i in range(len(child))]
+    return child
+
+def mutate(rng: random.Random, chromosome: list[float], rate: float) -> None:
+    for i in range(len(chromosome)):
+        if rng.random() < rate:
+            chromosome[i] = rng.random()
+
+def fitness(solution: Solution) -> float:
+    return solution.objective
+
 def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_limit):
-    add_log("开始初始化优化模型（云平台适配版）")
+    add_log("开始初始化遗传算法求解器")
     st.session_state.convergence_data = []
-    hours = list(range(6, 22))
-    n_hours = len(hours)
-    n_vehicles = vehicle_count
     
-    # 创建模型
-    model = gp.Model("bus_scheduling_cloud")
-    
-    # 云平台关键设置：关闭所有输出、禁用回调、简化求解
-    model.setParam('OutputFlag', 0)  # 彻底关闭日志输出
-    model.setParam('TimeLimit', solve_time_limit)
-    model.setParam('MIPFocus', 1)  # 优先找可行解，而不是最优解
-    model.setParam('Heuristics', 0.8)  # 增加启发式算法比例，加快求解速度
-
-    # 变量定义：用整数变量代替二进制变量，大幅降低求解难度
-    x = model.addVars(n_vehicles, n_hours, vtype=GRB.INTEGER, lb=0, ub=1, name="x")
-    y = model.addVars(n_hours, vtype=GRB.CONTINUOUS, name="y")
-
-    # 目标函数：乘客等待成本 + 车辆使用成本
-    obj = 0
-    for j in range(n_hours):
-        obj += predictions[j] * y[j] * 0.1
-        for i in range(n_vehicles):
-            obj += x[i, j] * 50
-    model.setObjective(obj, GRB.MINIMIZE)
-
-    # 约束条件（简化版，确保云平台能运行）
-    # 1. 每小时至少发1班车
-    model.addConstrs(gp.quicksum(x[i, j] for i in range(n_vehicles)) >= 1 for j in range(n_hours))
-    
-    # 2. 发车间隔≤15分钟
-    model.addConstrs(y[j] == 60 / gp.quicksum(x[i, j] for i in range(n_vehicles)) for j in range(n_hours))
-    model.addConstrs(y[j] <= 15 for j in range(n_hours))
-    
-    # 3. 单辆车连续5小时最多跑4趟（休息1小时）
-    for i in range(n_vehicles):
-        for j in range(n_hours - 4):
-            model.addConstr(gp.quicksum(x[i, j + t] for t in range(5)) <= 4)
-    
-    # 4. 电量约束：每趟耗电10%
-    model.addConstrs(gp.quicksum(x[i, j] for j in range(n_hours)) * 10 <= initial_battery for i in range(n_vehicles))
-
-    # 求解+完整异常捕获
-    try:
-        model.optimize()
-    except gp.GurobiError as e:
-        st.error(f"❌ Gurobi求解错误：{e.message}")
-        st.warning("请尝试：增加车辆数、提高初始电量、延长求解时间")
-        add_log(f"❌ Gurobi求解失败：{e.message}")
+    # ✅ 第一步：检查两个表是否已经生成
+    if st.session_state.timetable_data is None:
+        st.error("❌ 请先点击「读取班次表」加载排班数据")
+        add_log("❌ 遗传算法求解失败：未加载排班表")
         return None, None
-    except Exception as e:
-        st.error(f"❌ 未知错误：{str(e)}")
-        add_log(f"❌ 未知错误：{str(e)}")
+    
+    if st.session_state.power_prediction_table is None:
+        st.error("❌ 请先点击「运行统计预测」生成统计数据")
+        add_log("❌ 遗传算法求解失败：未生成统计预测表")
         return None, None
-
-    # 求解结果处理
-    if model.status == GRB.INFEASIBLE:
-        st.error("❌ 模型无解！约束条件互相矛盾")
-        st.info("常见原因：车辆太少、电量太低、发车间隔要求太严")
-        add_log("❌ 模型不可行，约束冲突")
-        return None, None
-    elif model.status == GRB.TIME_LIMIT:
-        st.warning("⚠️ 求解时间到，已找到可行解但非最优")
-        add_log("⚠️ 求解超时，返回可行解")
-    elif model.status == GRB.OPTIMAL:
-        add_log(f"✅ 求解完成，最优目标值：{model.objVal:.2f}")
-        st.session_state.current_objective = model.objVal
-    else:
-        st.warning(f"⚠️ 求解状态异常：{model.status}")
-        return None, None
-
-    # 生成排班表
-    schedule = []
-    for j in range(n_hours):
-        hour = hours[j]
-        departures = []
-        for i in range(n_vehicles):
-            if x[i, j].X > 0.5:
-                departures.append(f"车{i+1:02d}")
+    
+    add_log("✅ 成功读取页面生成的排班表和统计预测表")
+    
+    # 遗传算法参数（和你提供的代码一致）
+    POPULATION_SIZE = 56
+    GENERATIONS = 90
+    ELITE_SIZE = 6
+    MUTATION_RATE = 0.055
+    TOP_K = 5
+    SEED = 20260528
+    
+    # 配置参数
+    config = Config(
+        charger_capacity={"A": 40, "B": 40},
+        rest_minutes=25.0,
+        max_late_minutes=5.0,
+    )
+    
+    # ✅ 第二步：从统计预测表提取小时参数
+    hour_params = {}
+    pred_df = st.session_state.power_prediction_table
+    
+    for _, row in pred_df.iterrows():
+        # 提取小时（从"06:00"格式中提取数字6）
+        hour_str = row["小时"]
+        hour = int(hour_str.split(":")[0])
         
-        if not departures:
-            continue
-            
-        interval = 60 / len(departures)
-        for k, vehicle in enumerate(departures):
-            minute = round(k * interval)
-            depart_time = f"{hour:02d}:{minute:02d}"
-            # 计算到达时间
-            arrive_minute = minute + 45
-            arrive_hour = hour + arrive_minute // 60
-            arrive_minute = arrive_minute % 60
-            arrive_time = f"{arrive_hour:02d}:{arrive_minute:02d}"
-            
+        # 提取该小时的所有参数
+        hour_params[hour] = {
+            "passenger_flow": predictions[hour-6] if 6 <= hour <= 21 else 0,
+            "is_peak": row["时段类型"] in ["早高峰", "晚高峰"],
+            "weather": row["天气"],
+            "power_consumption": row[[col for col in row.index if "电量消耗" in col][0]],
+            "runtime": float(row["75%运行时间 (min)"]),
+            "carbon_emission": float(row[[col for col in row.index if "碳排放" in col][0]])
+        }
+    
+    add_log(f"✅ 成功从统计预测表提取 {len(hour_params)} 个小时的参数")
+    
+    # ✅ 第三步：从排班表提取任务列表
+    timetable_df = st.session_state.timetable_data
+    trips = []
+    
+    for idx, row in timetable_df.iterrows():
+        # 提取发车时间
+        depart_time_str = row["发车时间"]
+        depart_hour = int(depart_time_str.split(":")[0])
+        depart_minute = int(depart_time_str.split(":")[1])
+        
+        # 构建任务对象
+        trips.append({
+            "id": f"trip_{idx}",
+            "depart_hour": depart_hour,
+            "depart_minute": depart_minute,
+            "depart_time": depart_time_str,
+            "vehicle_id": row.get("车辆编号", f"车{idx+1:02d}"),
+            "passenger_flow": hour_params.get(depart_hour, {}).get("passenger_flow", 100),
+            "runtime": hour_params.get(depart_hour, {}).get("runtime", 45.0)
+        })
+    
+    add_log(f"✅ 成功从排班表提取 {len(trips)} 个任务")
+    
+    n = len(trips)
+    rng = random.Random(SEED)
+    
+    # 初始化种群
+    population: list[list[float]] = [[0.0 for _ in range(n)]]
+    while len(population) < POPULATION_SIZE:
+        population.append([rng.random() for _ in range(n)])
+    
+    best_solution: Solution | None = None
+    best_chromosome: list[float] | None = None
+    
+    # 进化过程
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    for gen in range(GENERATIONS + 1):
+        # 更新进度
+        progress = int((gen / GENERATIONS) * 100)
+        progress_bar.progress(progress)
+        status_text.text(f"遗传算法进化中... 第 {gen}/{GENERATIONS} 代")
+        
+        scored: list[tuple[float, list[float], Solution]] = []
+        for chrom in population:
+            sol = decode_with_random_keys(
+                trips,
+                hour_params,
+                config,
+                genes=chrom,
+                top_k=TOP_K,
+                algorithm="genetic",
+            )
+            scored.append((fitness(sol), chrom, sol))
+        
+        scored.sort(key=lambda item: item[0])
+        
+        # 更新最优解
+        if best_solution is None or scored[0][0] < fitness(best_solution):
+            best_solution = scored[0][2]
+            best_chromosome = scored[0][1][:]
+            st.session_state.convergence_data.append((gen, best_solution.objective))
+        
+        best = scored[0][2]
+        feasible_count = sum(1 for _, _, sol in scored if sol.feasible)
+        
+        add_log(
+            f"gen={gen:03d} best={best.objective:.6f} feasible={best.feasible} "
+            f"vehicles={best.vehicles_used} gap_lb={best.relative_gap_to_lb:.6f} feasible_count={feasible_count}"
+        )
+        
+        if gen == GENERATIONS:
+            break
+        
+        # 生成下一代
+        next_population: list[list[float]] = [chrom[:] for _, chrom, _ in scored[: ELITE_SIZE]]
+        while len(next_population) < POPULATION_SIZE:
+            left = tournament(rng, scored)
+            right = tournament(rng, scored)
+            child = crossover(rng, left, right)
+            mutate(rng, child, MUTATION_RATE)
+            next_population.append(child)
+        population = next_population
+    
+    progress_bar.empty()
+    status_text.empty()
+    
+    if best_solution is None:
+        st.error("❌ 遗传算法未找到可行解")
+        add_log("❌ 遗传算法未找到可行解")
+        return None, None
+    
+    add_log(f"✅ 遗传算法求解完成，最优目标值：{best_solution.objective:.2f}")
+    st.session_state.current_objective = best_solution.objective
+    
+    # ✅ 第四步：从最优解生成标准排班表
+    schedule = []
+    
+    # 优先使用遗传算法返回的真实排班结果
+    # 如果你的Solution对象有schedule属性，直接使用它
+    if hasattr(best_solution, 'schedule') and best_solution.schedule:
+        add_log("✅ 使用遗传算法返回的真实排班结果")
+        for item in best_solution.schedule:
             schedule.append({
-                "车辆编号": vehicle,
-                "发车时间": depart_time,
-                "到达时间": arrive_time,
-                "司机": f"司机{(ord(vehicle[-2:])%20)+1:02d}",
-                "电量消耗": "10%"
+                "车辆编号": item.get("vehicle_id", "未知"),
+                "发车时间": item.get("depart_time", "未知"),
+                "到达时间": item.get("arrive_time", "未知"),
+                "司机": item.get("driver", f"司机{random.randint(1,20):02d}"),
+                "电量消耗": item.get("power_consumption", "10%")
             })
+    else:
+        # 兼容模式：如果没有schedule属性，按原逻辑生成
+        add_log("⚠️ 遗传算法未返回详细排班，使用兼容模式生成")
+        vehicle_counter = 0
+        hours = list(range(6, 22))
+        
+        for j in range(len(hours)):
+            hour = hours[j]
+            flow = predictions[j]
+            
+            # 根据客流量计算发车数量
+            if flow > 300:
+                num_departures = 4
+            elif flow > 200:
+                num_departures = 3
+            elif flow > 100:
+                num_departures = 2
+            else:
+                num_departures = 1
+            
+            interval = 60 / num_departures
+            
+            for k in range(num_departures):
+                minute = round(k * interval)
+                depart_time = f"{hour:02d}:{minute:02d}"
+                
+                # 循环分配车辆
+                vehicle_id = f"车{(vehicle_counter % vehicle_count)+1:02d}"
+                vehicle_counter += 1
+                
+                # 计算到达时间
+                runtime = hour_params.get(hour, {}).get("runtime", 45.0)
+                arrive_minute = minute + int(runtime)
+                arrive_hour = hour + arrive_minute // 60
+                arrive_minute = arrive_minute % 60
+                arrive_time = f"{arrive_hour:02d}:{arrive_minute:02d}"
+                
+                schedule.append({
+                    "车辆编号": vehicle_id,
+                    "发车时间": depart_time,
+                    "到达时间": arrive_time,
+                    "司机": f"司机{(ord(vehicle_id[-2:])%20)+1:02d}",
+                    "电量消耗": hour_params.get(hour, {}).get("power_consumption", "10%")
+                })
     
     df = pd.DataFrame(schedule)
     add_log(f"✅ 生成排班表，共{len(df)}个班次")
-    return model, df
+    
+    # 返回格式和原函数完全一致
+    return best_solution, df
 
 # -------------------------- 侧边栏 --------------------------
 st.sidebar.title("🚌 智能公交调度系统")
@@ -803,6 +942,12 @@ elif page == "⚙️ 优化求解":
     st.header("⚙️ 优化求解", divider="blue")
     if st.session_state.optimization_result:
         st.metric("最优目标值", f"{st.session_state.current_objective:.2f}")
+        
+        # 显示收敛曲线数据
+        if st.session_state.convergence_data:
+            st.subheader("遗传算法收敛曲线")
+            conv_df = pd.DataFrame(st.session_state.convergence_data, columns=["代次", "目标值"])
+            st.line_chart(conv_df.set_index("代次"))
     else:
         st.info("请先在「今日调度」页面点击「开始优化求解」")
 
