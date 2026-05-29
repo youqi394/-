@@ -92,7 +92,7 @@ h1, h2, h3 {
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# ==================== 会话状态初始化（完整修复） ====================
+# ==================== 会话状态初始化 ====================
 if 'progress' not in st.session_state:
     st.session_state.progress = 0
 if 'current_stage' not in st.session_state:
@@ -531,7 +531,7 @@ def generate_standard_schedule(raw_schedule, power_prediction_table, initial_bat
             final_schedule.append(row)
     return pd.DataFrame(final_schedule)
 
-# ==================== 遗传算子（和命令行1:1对齐） ====================
+# ==================== 遗传算子（与命令行完全一致） ====================
 def tournament(rng: random.Random, scored: list[tuple[float, list[float], Solution]], size: int = 3) -> list[float]:
     picks = [rng.choice(scored) for _ in range(size)]
     picks.sort(key=lambda item: item[0])
@@ -546,7 +546,7 @@ def crossover(rng: random.Random, left: list[float], right: list[float]) -> list
     b = rng.randrange(a, len(left))
     child = left[:a] + right[a:b] + left[b:]
     if rng.random() < 0.25:
-        child = [right[i] if rng.random() < 0.5 else child[i] for i in range(len(child))]
+        child = [right[i] if rng.random() < 0.5 else left[i] for i in range(len(left))]
     return child
 
 def mutate(rng: random.Random, chromosome: list[float], rate: float) -> None:
@@ -557,9 +557,9 @@ def mutate(rng: random.Random, chromosome: list[float], rate: float) -> None:
 def fitness(solution: Solution) -> float:
     return solution.objective
 
-# ==================== 优化主函数（带双终止条件：最大迭代 + 收敛Gap） ====================
+# ==================== 优化主函数（仅使用Gap作为终止条件 + 内置安全上限） ====================
 def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_limit,
-                      pop_size, generations, elite_num, mut_rate, top_k, seed_val,
+                      pop_size, elite_num, mut_rate, top_k, seed_val,
                       gap_threshold, stable_generations):
     add_log("开始初始化双算法求解器")
     st.session_state.convergence_data = []
@@ -569,7 +569,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     st.session_state.greedy_schedule_data = None
     st.session_state.greedy_objective = 0.0
 
-    # 数据校验（修复了DataFrame判断错误）
+    # 数据校验（修复DataFrame判空报错）
     if st.session_state.timetable_data is None:
         st.error("❌ 请先点击「读取班次表」加载排班数据")
         add_log("❌ 求解失败：未加载排班表")
@@ -590,7 +590,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
         max_late_minutes=5.0,
     )
 
-    # -------------------------- 第一步：贪心算法 --------------------------
+    # -------------------------- 第一步：贪心算法（逻辑不变） --------------------------
     add_log("🔄 开始运行贪心算法（粗略解）")
     progress_bar = st.progress(0)
     status_text = st.empty()
@@ -616,11 +616,14 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     progress_bar.progress(10)
     status_text.text("贪心算法完成，开始运行遗传算法（精确解）...")
 
-    # -------------------------- 第二步：遗传算法（带Gap终止） --------------------------
-    add_log("🔄 开始运行标准遗传算法（精确解）")
+    # -------------------------- 第二步：遗传算法（仅Gap终止，无固定迭代数） --------------------------
+    add_log("🔄 开始运行遗传算法（以Gap收敛为唯一终止条件）")
     run_started = time.perf_counter()
     rng = random.Random(seed_val)
     n = len(trips)
+
+    # 【内置安全兜底：最大1000代，防止极端死循环，页面不展示】
+    MAX_SAFE_ITER = 1000
 
     # 种群初始化
     population: list[list[float]] = [[0.0 for _ in range(n)]]
@@ -632,12 +635,14 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     ga_history = []
     stable_count = 0
     last_best_obj = None
+    current_gen = 0
 
-    # 迭代循环（双终止条件）
-    for gen in range(generations + 1):
-        progress = 10 + int((gen / generations) * 90)
-        progress_bar.progress(progress)
-        status_text.text(f"遗传算法进化中... 第 {gen}/{generations} 代")
+    # ========== 无限while循环，仅靠Gap收敛停止 ==========
+    while True:
+        # 进度条（基于安全最大迭代数计算）
+        progress = 10 + int((current_gen / MAX_SAFE_ITER) * 90)
+        progress_bar.progress(min(progress, 100))
+        status_text.text(f"遗传算法进化中... 当前第 {current_gen} 代")
 
         scored: list[tuple[float, list[float], Solution]] = []
         for chrom in population:
@@ -652,14 +657,16 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
             scored.append((fitness(sol), chrom, sol))
         scored.sort(key=lambda item: item[0])
 
-        # 更新全局最优 + 计算收敛Gap
+        # 更新全局最优 & 计算收敛Gap
         current_best = scored[0]
         current_obj = current_best[0]
         gap = 0.0
+
         if best_solution is not None:
             gap = abs(current_obj - fitness(best_solution)) / fitness(best_solution)
             st.session_state.current_gap = gap
 
+        # 更新最优解
         if best_solution is None or current_obj < fitness(best_solution):
             best_solution = current_best[2]
             best_chromosome = current_best[1][:]
@@ -671,10 +678,10 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
         best = scored[0][2]
         feasible_count = sum(1 for _, _, sol in scored if sol.feasible)
 
-        # 记录收敛曲线 & 迭代历史
-        st.session_state.convergence_data.append((gen, best.objective))
+        # 记录收敛数据
+        st.session_state.convergence_data.append((current_gen, best.objective))
         ga_history.append({
-            "generation": gen,
+            "generation": current_gen,
             "best_objective": best.objective,
             "best_feasible": best.feasible,
             "best_vehicles": best.vehicles_used,
@@ -684,19 +691,22 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
         })
 
         add_log(
-            f"gen={gen:03d} best={best.objective:.6f} gap={gap:.6f} stable={stable_count}/{stable_generations} "
-            f"feasible={best.feasible} vehicles={best.vehicles_used}"
+            f"gen={current_gen:03d} best={best.objective:.6f} gap={gap:.6f} "
+            f"stable={stable_count}/{stable_generations} feasible={best.feasible} vehicles={best.vehicles_used}"
         )
 
-        # Gap收敛终止条件
+        # ===================== 核心终止条件：仅判断Gap =====================
+        # 条件1：连续指定代数 + Gap小于阈值 → 收敛，停止
         if stable_count >= stable_generations and gap < gap_threshold:
-            add_log(f"✅ 连续{stable_generations}代Gap < {gap_threshold}，判定收敛，提前终止迭代")
+            add_log(f"✅ 收敛完成：连续{stable_generations}代 Gap < {gap_threshold}，算法终止")
             break
 
-        if gen == generations:
+        # 条件2：安全兜底：达到最大安全迭代数，强制停止（防死循环）
+        if current_gen >= MAX_SAFE_ITER:
+            add_log(f"⚠️ 达到安全最大迭代{MAX_SAFE_ITER}代，强制终止")
             break
 
-        # 生成下一代
+        # 生成下一代种群
         next_population: list[list[float]] = [chrom[:] for _, chrom, _ in scored[: elite_num]]
         while len(next_population) < pop_size:
             left = tournament(rng, scored)
@@ -706,7 +716,9 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
             next_population.append(child)
         population = next_population
 
-    # 算法结束后处理
+        current_gen += 1
+
+    # 算法收尾
     total_runtime_sec = time.perf_counter() - run_started
     if best_solution is None or best_chromosome is None:
         progress_bar.empty()
@@ -718,13 +730,13 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     best_solution.runtime_sec = total_runtime_sec
     best_solution.metadata["ga_parameters"] = {
         "population": pop_size,
-        "generations": generations,
         "elite": elite_num,
         "mutation_rate": mut_rate,
         "top_k": top_k,
         "seed": seed_val,
         "gap_threshold": gap_threshold,
-        "stable_generations": stable_generations
+        "stable_generations": stable_generations,
+        "max_safe_iter": MAX_SAFE_ITER
     }
 
     st.session_state.ga_history = ga_history
@@ -745,7 +757,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     status_text.empty()
     return best_solution, df
 
-# ==================== 侧边栏 & 页面布局 ====================
+# ==================== 侧边栏 & 页面布局（移除「最大迭代代数」） ====================
 st.sidebar.title("🚌 智能公交调度系统")
 st.sidebar.markdown("""<style>[data-testid="stSidebar"] {background-color: #f0f5fa;}</style>""", unsafe_allow_html=True)
 st.sidebar.divider()
@@ -766,22 +778,25 @@ if page == "📅 今日调度":
         initial_battery = st.number_input("初始电量（%）", 0, 100, 100)
         solve_time = st.number_input("求解时间上限（秒）", 60, 3600, 300)
 
-    # 遗传算法参数配置
+    # 遗传算法参数配置：已移除【最大迭代代数】
     st.divider()
-    st.subheader("🧬 遗传算法参数配置")
-    g1, g2, g3, g4, g5, g6 = st.columns(6)
+    st.subheader("🧬 遗传算法参数配置（仅Gap控制收敛）")
+    g1, g2, g3, g4 = st.columns(4)
     with g1:
         pop_size = st.number_input("种群大小", 10, 200, 56)
     with g2:
-        generations = st.number_input("最大迭代代数", 10, 500, 90)
-    with g3:
         elite_num = st.number_input("精英个体数", 1, 20, 6)
-    with g4:
+    with g3:
         mut_rate = st.number_input("变异概率", 0.01, 0.5, 0.055, step=0.001)
-    with g5:
+    with g4:
         top_k = st.number_input("Top-K", 1, 10, 5)
-    with g6:
+
+    g5, g6 = st.columns(2)
+    with g5:
         seed_val = st.number_input("随机种子", 0, 99999999, 20260528)
+    with g6:
+        pass
+
     g7, g8 = st.columns(2)
     with g7:
         gap_threshold = st.number_input("收敛Gap阈值", 0.0001, 0.1, 0.001, step=0.0001, format="%.4f")
@@ -835,7 +850,7 @@ if page == "📅 今日调度":
 
     with btn4:
         if st.button("开始优化求解"):
-            # 修复后的校验逻辑
+            # 安全判断DataFrame是否为空
             predictions_ok = st.session_state.predictions is not None and len(st.session_state.predictions) > 0
             table_ok = st.session_state.power_prediction_table is not None and not st.session_state.power_prediction_table.empty
             if not predictions_ok or not table_ok:
@@ -848,7 +863,6 @@ if page == "📅 今日调度":
                     initial_battery,
                     solve_time,
                     pop_size,
-                    generations,
                     elite_num,
                     mut_rate,
                     top_k,
