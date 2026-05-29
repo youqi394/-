@@ -92,7 +92,7 @@ h1, h2, h3 {
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# -------------------------- 初始化会话状态（不变） --------------------------
+# -------------------------- ✅ 新增：贪心算法相关会话状态 --------------------------
 if 'progress' not in st.session_state:
     st.session_state.progress = 0
 if 'current_stage' not in st.session_state:
@@ -123,6 +123,13 @@ if 'power_prediction_table' not in st.session_state:
     st.session_state.power_prediction_table = None
 if 'weather_source' not in st.session_state:
     st.session_state.weather_source = ""
+# 新增：贪心算法结果
+if 'greedy_solution' not in st.session_state:
+    st.session_state.greedy_solution = None
+if 'greedy_schedule_data' not in st.session_state:
+    st.session_state.greedy_schedule_data = None
+if 'greedy_objective' not in st.session_state:
+    st.session_state.greedy_objective = 0.0
 
 # -------------------------- 工具函数（不变） --------------------------
 def add_log(message):
@@ -510,7 +517,7 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
         predictions.append(round(flow * (0.9 + np.random.random() * 0.2)))
     return hours, predictions
 
-# -------------------------- ✅ 完全保留你原有的遗传算法进化框架 --------------------------
+# -------------------------- ✅ 双算法求解器：先贪心后遗传 --------------------------
 def tournament(rng: random.Random, scored: list[tuple[float, list[float], Solution]], size: int = 3) -> list[float]:
     picks = [rng.choice(scored) for _ in range(size)]
     picks.sort(key=lambda item: item[0])
@@ -537,47 +544,39 @@ def fitness(solution: Solution) -> float:
     return solution.objective
 
 def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_limit):
-    add_log("开始初始化遗传算法求解器")
+    add_log("开始初始化双算法求解器")
     st.session_state.convergence_data = []
+    # 重置贪心结果
+    st.session_state.greedy_solution = None
+    st.session_state.greedy_schedule_data = None
+    st.session_state.greedy_objective = 0.0
     
-    # 检查两个表是否已经生成
+    # 检查数据
     if st.session_state.timetable_data is None:
         st.error("❌ 请先点击「读取班次表」加载排班数据")
-        add_log("❌ 遗传算法求解失败：未加载排班表")
+        add_log("❌ 求解失败：未加载排班表")
         return None, None
     
     if st.session_state.power_prediction_table is None:
         st.error("❌ 请先点击「运行统计预测」生成统计数据")
-        add_log("❌ 遗传算法求解失败：未生成统计预测表")
+        add_log("❌ 求解失败：未生成统计预测表")
         return None, None
     
     add_log("✅ 成功读取页面生成的排班表和统计预测表")
     
-    # ✅ 微调参数，确保收敛效果更好
-    POPULATION_SIZE = 64
-    GENERATIONS = 100
-    ELITE_SIZE = 4
-    MUTATION_RATE = 0.08
-    TOP_K = 5
-    SEED = 20260529
-    
-    # 完全保留你原有的配置参数
+    # 配置参数（和你原代码完全一致）
     config = Config(
         charger_capacity={"A": 40, "B": 40},
         rest_minutes=25.0,
         max_late_minutes=5.0,
     )
     
-    # 从统计预测表提取小时参数
+    # 提取小时参数
     hour_params = {}
     pred_df = st.session_state.power_prediction_table
-    
     for _, row in pred_df.iterrows():
-        # 提取小时（从"06:00"格式中提取数字6）
         hour_str = row["小时"]
         hour = int(hour_str.split(":")[0])
-        
-        # 提取该小时的所有参数
         hour_params[hour] = {
             "passenger_flow": predictions[hour-6] if 6 <= hour <= 21 else 0,
             "is_peak": row["时段类型"] in ["早高峰", "晚高峰"],
@@ -586,21 +585,16 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
             "runtime": float(row["75%运行时间 (min)"]),
             "carbon_emission": float(row[[col for col in row.index if "碳排放" in col][0]])
         }
-    
     add_log(f"✅ 成功从统计预测表提取 {len(hour_params)} 个小时的参数")
     
-    # 从合并后的排班表提取任务列表
+    # 提取任务列表
     timetable_df = st.session_state.timetable_data
     trips = []
-    
     for idx, row in timetable_df.iterrows():
-        # 提取发车时间（支持"5:00"和"05:00"两种格式）
         depart_time_str = row["发车时间"]
         parts = depart_time_str.split(":")
         depart_hour = int(parts[0])
         depart_minute = int(parts[1])
-        
-        # 构建任务对象
         trips.append({
             "id": f"trip_{idx}",
             "depart_hour": depart_hour,
@@ -609,13 +603,80 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
             "passenger_flow": hour_params.get(depart_hour, {}).get("passenger_flow", 100),
             "runtime": hour_params.get(depart_hour, {}).get("runtime", 45.0)
         })
-    
     add_log(f"✅ 成功从排班表提取 {len(trips)} 个任务（双向合并后）")
+    
+    # -------------------------- 第一步：运行贪心算法（粗略解） --------------------------
+    add_log("🔄 开始运行贪心算法（粗略解）")
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    status_text.text("正在运行贪心算法（粗略解）...")
+    progress_bar.progress(5)
+    
+    # 调用贪心算法（和你给的命令行代码完全一致）
+    greedy_solution = decode_with_random_keys(
+        trips,
+        hour_params,
+        config,
+        algorithm="greedy"
+    )
+    
+    # 生成贪心排班表
+    greedy_schedule = []
+    if hasattr(greedy_solution, 'schedule') and greedy_solution.schedule:
+        add_log("✅ 使用贪心算法返回的真实排班结果")
+        for item in greedy_solution.schedule:
+            greedy_schedule.append({
+                "车辆编号": item.get("vehicle_id", "未知"),
+                "发车时间": item.get("depart_time", "未知"),
+                "到达时间": item.get("arrive_time", "未知"),
+                "司机": item.get("driver", f"司机{random.randint(1,20):02d}"),
+                "电量消耗": item.get("power_consumption", "10%")
+            })
+    else:
+        add_log("⚠️ 贪心算法未返回详细排班，使用兼容模式生成")
+        vehicle_counter = 0
+        for trip in trips:
+            depart_time = trip["depart_time"]
+            depart_hour = trip["depart_hour"]
+            depart_minute = trip["depart_minute"]
+            vehicle_id = f"车{(vehicle_counter % vehicle_count)+1:02d}"
+            vehicle_counter += 1
+            runtime = trip["runtime"]
+            arrive_minute = depart_minute + int(runtime)
+            arrive_hour = depart_hour + arrive_minute // 60
+            arrive_minute = arrive_minute % 60
+            arrive_time = f"{arrive_hour:02d}:{arrive_minute:02d}"
+            greedy_schedule.append({
+                "车辆编号": vehicle_id,
+                "发车时间": depart_time,
+                "到达时间": arrive_time,
+                "司机": f"司机{(ord(vehicle_id[-2:])%20)+1:02d}",
+                "电量消耗": hour_params.get(depart_hour, {}).get("power_consumption", "10%")
+            })
+    
+    greedy_df = pd.DataFrame(greedy_schedule)
+    st.session_state.greedy_solution = greedy_solution
+    st.session_state.greedy_schedule_data = greedy_df
+    st.session_state.greedy_objective = greedy_solution.objective
+    add_log(f"✅ 贪心算法求解完成，目标值：{greedy_solution.objective:.2f}")
+    progress_bar.progress(10)
+    status_text.text("贪心算法完成，开始运行遗传算法（精确解）...")
+    
+    # -------------------------- 第二步：运行遗传算法（精确解） --------------------------
+    add_log("🔄 开始运行遗传算法（精确解）")
+    
+    # 遗传算法参数
+    POPULATION_SIZE = 64
+    GENERATIONS = 100
+    ELITE_SIZE = 4
+    MUTATION_RATE = 0.08
+    TOP_K = 5
+    SEED = 20260529
     
     n = len(trips)
     rng = random.Random(SEED)
     
-    # 初始化种群（完全保留你原有的逻辑）
+    # 初始化种群
     population: list[list[float]] = [[0.0 for _ in range(n)]]
     while len(population) < POPULATION_SIZE:
         population.append([rng.random() for _ in range(n)])
@@ -623,13 +684,10 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     best_solution: Solution | None = None
     best_chromosome: list[float] | None = None
     
-    # 进化过程（完全保留你原有的逻辑）
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
+    # 进化过程
     for gen in range(GENERATIONS + 1):
-        # 更新进度
-        progress = int((gen / GENERATIONS) * 100)
+        # 进度分配：贪心占10%，遗传占90%
+        progress = 10 + int((gen / GENERATIONS) * 90)
         progress_bar.progress(progress)
         status_text.text(f"遗传算法进化中... 第 {gen}/{GENERATIONS} 代")
         
@@ -667,7 +725,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
         if gen == GENERATIONS:
             break
         
-        # 生成下一代（完全保留你原有的逻辑）
+        # 生成下一代
         next_population: list[list[float]] = [chrom[:] for _, chrom, _ in scored[: ELITE_SIZE]]
         while len(next_population) < POPULATION_SIZE:
             left = tournament(rng, scored)
@@ -683,15 +741,13 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     if best_solution is None:
         st.error("❌ 遗传算法未找到可行解")
         add_log("❌ 遗传算法未找到可行解")
-        return None, None
+        return greedy_solution, greedy_df
     
     add_log(f"✅ 遗传算法求解完成，最优目标值：{best_solution.objective:.2f}")
     st.session_state.current_objective = best_solution.objective
     
-    # 从最优解生成标准排班表
+    # 生成遗传排班表
     schedule = []
-    
-    # 优先使用遗传算法返回的真实排班结果
     if hasattr(best_solution, 'schedule') and best_solution.schedule:
         add_log("✅ 使用遗传算法返回的真实排班结果")
         for item in best_solution.schedule:
@@ -703,26 +759,19 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
                 "电量消耗": item.get("power_consumption", "10%")
             })
     else:
-        # 兼容模式：如果没有schedule属性，按原逻辑生成
         add_log("⚠️ 遗传算法未返回详细排班，使用兼容模式生成")
         vehicle_counter = 0
-        
         for trip in trips:
             depart_time = trip["depart_time"]
             depart_hour = trip["depart_hour"]
             depart_minute = trip["depart_minute"]
-            
-            # 循环分配车辆
             vehicle_id = f"车{(vehicle_counter % vehicle_count)+1:02d}"
             vehicle_counter += 1
-            
-            # 计算到达时间
             runtime = trip["runtime"]
             arrive_minute = depart_minute + int(runtime)
             arrive_hour = depart_hour + arrive_minute // 60
             arrive_minute = arrive_minute % 60
             arrive_time = f"{arrive_hour:02d}:{arrive_minute:02d}"
-            
             schedule.append({
                 "车辆编号": vehicle_id,
                 "发车时间": depart_time,
@@ -732,9 +781,8 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
             })
     
     df = pd.DataFrame(schedule)
-    add_log(f"✅ 生成排班表，共{len(df)}个班次")
+    add_log(f"✅ 生成遗传排班表，共{len(df)}个班次")
     
-    # 返回格式和原函数完全一致
     return best_solution, df
 
 # -------------------------- 侧边栏（不变） --------------------------
@@ -745,7 +793,7 @@ page = st.sidebar.radio("功能模块", ["📅 今日调度", "📊 数据管理
 st.sidebar.divider()
 st.sidebar.info("智能公交调度系统")
 
-# -------------------------- 今日调度（不变） --------------------------
+# -------------------------- 今日调度（新增双导出） --------------------------
 if page == "📅 今日调度":
     st.header("🚌 智能公交调度", divider="blue")
     col1, col2 = st.columns(2)
@@ -822,9 +870,16 @@ if page == "📅 今日调度":
 
     with btn5:
         if st.button("导出排班结果"):
-            if st.session_state.schedule_data is not None:
-                csv = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
-                st.download_button("📥 下载排班表", csv, f"公交排班表_{dispatch_date.strftime('%Y%m%d')}.csv")
+            if st.session_state.schedule_data is not None and st.session_state.greedy_schedule_data is not None:
+                # 导出粗略解
+                csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
+                # 导出精确解
+                csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
+                
+                # 显示两个下载按钮
+                st.download_button("📥 下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
+                st.download_button("📥 下载精确解排班表", csv_genetic, f"公交排班表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
+                
                 st.session_state.progress = 100
                 st.session_state.current_stage = "全部完成"
             else:
@@ -940,13 +995,30 @@ elif page == "📊 统计预测结果":
         
         st.success("✅ 所有数据100%来自你上传的CSV文件，完全匹配当日天气和季节")
 
-# -------------------------- 优化求解（不变） --------------------------
+# -------------------------- ✅ 优化求解页面：双结果展示 --------------------------
 elif page == "⚙️ 优化求解":
     st.header("⚙️ 优化求解", divider="blue")
+    
+    # 显示贪心算法（粗略解）结果
+    if st.session_state.greedy_solution:
+        st.subheader("📌 粗略解（贪心算法）")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("最优目标值", f"{st.session_state.greedy_objective:.2f}")
+        with col2:
+            st.metric("使用车辆数", st.session_state.greedy_solution.vehicles_used)
+        st.divider()
+    
+    # 显示遗传算法（精确解）结果
     if st.session_state.optimization_result:
-        st.metric("最优目标值", f"{st.session_state.current_objective:.2f}")
+        st.subheader("🎯 精确解（遗传算法）")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("最优目标值", f"{st.session_state.current_objective:.2f}")
+        with col2:
+            st.metric("使用车辆数", st.session_state.optimization_result.vehicles_used)
         
-        # 显示收敛曲线数据
+        # 显示收敛曲线
         if st.session_state.convergence_data:
             st.subheader("遗传算法收敛曲线")
             conv_df = pd.DataFrame(st.session_state.convergence_data, columns=["代次", "目标值"])
@@ -954,21 +1026,39 @@ elif page == "⚙️ 优化求解":
     else:
         st.info("请先在「今日调度」页面点击「开始优化求解」")
 
-# -------------------------- 排班结果（不变） --------------------------
+# -------------------------- ✅ 排班结果页面：双表+双导出 --------------------------
 elif page == "📋 排班结果":
     st.header("📋 排班结果", divider="blue")
-    if st.session_state.schedule_data is not None:
-        st.dataframe(st.session_state.schedule_data, use_container_width=True)
+    
+    # 显示贪心算法（粗略解）排班表
+    if st.session_state.greedy_schedule_data is not None:
+        st.subheader("📌 粗略解（贪心算法）排班表")
+        st.dataframe(st.session_state.greedy_schedule_data, use_container_width=True)
         
-        # 下载排班表
-        csv_data = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
+        # 下载粗略解排班表
+        csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
         current_date = datetime.now().date()
         if st.session_state.weather_data:
             current_date = st.session_state.weather_data['date']
         st.download_button(
-            label="📥 下载排班表",
-            data=csv_data,
-            file_name=f"公交排班表_{current_date.strftime('%Y%m%d')}.csv",
+            label="📥 下载粗略解排班表",
+            data=csv_greedy,
+            file_name=f"公交排班表_粗略解_{current_date.strftime('%Y%m%d')}.csv",
+            mime="text/csv"
+        )
+        st.divider()
+    
+    # 显示遗传算法（精确解）排班表
+    if st.session_state.schedule_data is not None:
+        st.subheader("🎯 精确解（遗传算法）排班表")
+        st.dataframe(st.session_state.schedule_data, use_container_width=True)
+        
+        # 下载精确解排班表
+        csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
+        st.download_button(
+            label="📥 下载精确解排班表",
+            data=csv_genetic,
+            file_name=f"公交排班表_精确解_{current_date.strftime('%Y%m%d')}.csv",
             mime="text/csv"
         )
     else:
