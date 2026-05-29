@@ -100,7 +100,7 @@ def load_instance(
     
     return schedule_data, hour_params
 
-# -------------------------- ✅ 新增：支持贪心算法的解码函数 --------------------------
+# -------------------------- ✅ 统一解码函数（保留方向信息） --------------------------
 def decode_with_random_keys(
     trips: List[Dict[str, Any]],
     hour_params: Dict[int, Dict[str, Any]],
@@ -157,6 +157,8 @@ def decode_with_random_keys(
                     "depart_minute": depart_minute,
                     "passenger_flow": trip.get("passenger_flow", 100),
                     "runtime": runtime,
+                    "direction": trip.get("direction", "未知"),  # 保留方向信息
+                    "power_consumption": trip.get("power_consumption", "10%"),
                 })
                 current_time[i] = arrive_total
                 vehicle_trip_count[i] = vehicle_trip_count.get(i, 0) + 1
@@ -174,6 +176,8 @@ def decode_with_random_keys(
                 "depart_minute": depart_minute,
                 "passenger_flow": trip.get("passenger_flow", 100),
                 "runtime": runtime,
+                "direction": trip.get("direction", "未知"),  # 保留方向信息
+                "power_consumption": trip.get("power_consumption", "10%"),
             })
             current_time[len(vehicles)-1] = arrive_total
             vehicle_trip_count[len(vehicles)-1] = 1
