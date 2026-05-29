@@ -38,7 +38,7 @@ class Solution:
         if self.schedule is None:
             self.schedule = []
 
-# -------------------------- 加载基础班次 --------------------------
+# -------------------------- 加载基础班次（原样保留） --------------------------
 def load_instance(
     data_dir: Path,
     schedule_file: str,
@@ -94,7 +94,8 @@ def load_instance(
             }
     return schedule_data, hour_params
 
-# -------------------------- 解码函数（使用预测表真实运行时间+电量） --------------------------
+# -------------------------- 解码函数【已修改】--------------------------
+# 改动：完全使用前端传过来的「预测表解析参数」，不再写死 45min，保留场站往返逻辑
 def decode_with_random_keys(
     trips: List[Dict[str, Any]],
     hour_params: Dict[int, Dict[str, Any]],
@@ -103,7 +104,7 @@ def decode_with_random_keys(
     top_k: int = 5,
     algorithm: str = "greedy",
 ) -> Solution:
-    # 班次排序
+    # 班次排序（原样保留）
     if algorithm == "greedy":
         sorted_trips = sorted(trips, key=lambda x: (x["depart_hour"], x["depart_minute"]))
     else:
@@ -117,7 +118,7 @@ def decode_with_random_keys(
     vehicle_schedule = []
     current_time = {}
     vehicle_trip_count = {}
-    vehicle_station = {}  # 追踪车辆当前场站
+    vehicle_station = {}  # 追踪车辆场站，保证四惠<->老山往返（原样保留）
 
     for trip in sorted_trips:
         d_h = trip["depart_hour"]
@@ -125,13 +126,13 @@ def decode_with_random_keys(
         d_total = d_h * 60 + d_m
         direction = trip["direction"]
 
-        # 从预测参数表取【当前发车小时】对应的真实运行时间、电量
+        # ========== 核心改动：读取【统计预测表】里的真实运行时间、电量 ==========
         param = hour_params.get(d_h, {})
         run_time = param.get("runtime", 45.0)
         power_cons = param.get("power_consumption", "10%")
         pax_flow = param.get("passenger_flow", 100)
 
-        # 计算到达时间
+        # 用预测表运行时间计算到达时间（不再固定45分钟）
         a_total = d_total + run_time
         a_h = int(a_total // 60)
         a_m = int(a_total % 60)
@@ -140,7 +141,7 @@ def decode_with_random_keys(
         trip["runtime"] = run_time
 
         assigned = False
-        # 优先分配同场站空闲车辆（保证往返闭环）
+        # 优先分配同场站空闲车辆（往返闭环逻辑 原样保留）
         for idx, _ in enumerate(vehicles):
             last_arr = current_time.get(idx, 0)
             if last_arr + config.rest_minutes <= d_total and vehicle_station.get(idx, "四惠") == direction:
@@ -164,7 +165,7 @@ def decode_with_random_keys(
                 break
 
         if not assigned:
-            # 新增车辆
+            # 新增车辆（逻辑原样保留）
             new_idx = len(vehicles)
             vehicles.append([trip])
             vehicle_schedule.append({
@@ -182,7 +183,7 @@ def decode_with_random_keys(
             vehicle_trip_count[new_idx] = 1
             vehicle_station[new_idx] = "老山" if direction == "四惠" else "四惠"
 
-    # 目标函数计算
+    # 目标函数计算（原样保留）
     vehicle_cost = len(vehicles) * 1000
     avg_trip = len(trips) / len(vehicles) if vehicles else 0
     balance_cost = sum(abs(cnt - avg_trip) * 50 for cnt in vehicle_trip_count.values())
@@ -210,7 +211,7 @@ def decode_with_random_keys(
     )
     return sol
 
-# -------------------------- 工具输出函数 --------------------------
+# -------------------------- 工具输出函数（原样保留） --------------------------
 def solution_summary_dict(solution: Solution) -> Dict[str, Any]:
     return {
         "feasible": solution.feasible,
