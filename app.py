@@ -8,14 +8,14 @@ import random
 from datetime import datetime, timedelta
 import re
 
-# -------------------------- 完全保留你原有的导入 --------------------------
+# -------------------------- 导入 --------------------------
 from heuristic_common import (
     Config,
     Solution,
     decode_with_random_keys,
 )
 
-# -------------------------- 全局配置（不变） --------------------------
+# -------------------------- 全局配置 --------------------------
 st.set_page_config(
     page_title="智能公交调度系统",
     page_icon="🚌",
@@ -53,7 +53,7 @@ h1, h2, h3 {
     font-weight: 600;
 }
 
-/* 彻底移除蓝色覆盖+文字加粗 */
+/* 进度条样式 */
 .stProgress {
     display: flex;
     flex-direction: column;
@@ -92,7 +92,7 @@ h1, h2, h3 {
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# -------------------------- 会话状态（不变） --------------------------
+# -------------------------- 会话状态初始化 --------------------------
 if 'progress' not in st.session_state:
     st.session_state.progress = 0
 if 'current_stage' not in st.session_state:
@@ -131,7 +131,7 @@ if 'greedy_schedule_data' not in st.session_state:
 if 'greedy_objective' not in st.session_state:
     st.session_state.greedy_objective = 0.0
 
-# -------------------------- 工具函数（不变） --------------------------
+# -------------------------- 工具函数 --------------------------
 def add_log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.session_state.solve_log.append(f"[INFO] {timestamp} - {message}")
@@ -173,7 +173,7 @@ def get_time_period(hour):
     else: # 0-5, 22-23
         return "低峰"
 
-# -------------------------- 天气获取（不变） --------------------------
+# -------------------------- 天气获取 --------------------------
 def get_weather_forecast(date):
     WEATHER_API_KEY = "e088a35c897818780a479973d4623063"
     today = datetime.now().date()
@@ -223,13 +223,13 @@ def get_weather_forecast(date):
     }
     return default_weather, None
 
-# -------------------------- ✅ 修改：读取班次表保留方向信息 --------------------------
+# -------------------------- ✅ 修复：通用方向识别逻辑 --------------------------
 @st.cache_resource
 def load_timetable_data(timetable_type):
     """
     根据选择的班次类型读取对应的时刻表文件
     保留每个发车时间的方向信息（四惠/老山）
-    兼容工作日（有时段列）和节假日（无时段列）格式
+    只要列名包含"四惠"就识别为四惠方向，包含"老山"就识别为老山方向
     """
     # 映射班次类型到文件名
     file_map = {
@@ -267,13 +267,15 @@ def load_timetable_data(timetable_type):
     for col in df.columns:
         normalized = normalize_column_name(col)
         if "发车时刻" in normalized or "发车时间" in normalized:
-            # 判断方向
-            if "四惠-老山" in col or "四惠到老山" in col:
+            # 通用方向识别
+            if "四惠" in col:
                 direction = "四惠"
-            elif "老山-四惠" in col or "老山到四惠" in col:
+            elif "老山" in col:
                 direction = "老山"
             else:
-                direction = "未知"
+                direction = "四惠"  # 默认方向
+            
+            add_log(f"✅ 识别到列：{col} → 方向：{direction}")
             
             # 提取该列的所有发车时间
             times = df[col].dropna().tolist()
@@ -297,12 +299,17 @@ def load_timetable_data(timetable_type):
         add_log(f"❌ {error_msg}")
         return None, error_msg
     
-    add_log(f"✅ 识别到 {len(set([t['direction'] for t in all_trips]))} 个发车方向")
+    # 统计方向数量
+    direction_count = {}
+    for trip in all_trips:
+        direction_count[trip["direction"]] = direction_count.get(trip["direction"], 0) + 1
+    
+    add_log(f"✅ 方向统计：{direction_count}")
     add_log(f"✅ 合并完成，共{len(all_trips)}个有效发车班次")
     
     return all_trips, None
 
-# -------------------------- 加载碳排放数据（不变） --------------------------
+# -------------------------- 加载碳排放数据 --------------------------
 @st.cache_resource
 def load_carbon_data():
     """从data文件夹加载碳排放CSV，格式：hour,annual,summer,winter"""
@@ -335,7 +342,7 @@ def load_carbon_data():
     add_log(f"✅ 成功加载 data/碳排放.csv，共{len(carbon_df)}条记录")
     return carbon_df, None
 
-# -------------------------- 加载运行时间数据（不变） --------------------------
+# -------------------------- 加载运行时间数据 --------------------------
 @st.cache_resource
 def load_runtime_data():
     """从data文件夹加载运行时间CSV，自动匹配列名"""
@@ -375,7 +382,7 @@ def load_runtime_data():
     add_log(f"✅ 成功加载 data/运行时间75%分位数.csv，共{len(runtime_df)}条记录")
     return runtime_df, None
 
-# -------------------------- 加载电量消耗数据（不变） --------------------------
+# -------------------------- 加载电量消耗数据 --------------------------
 @st.cache_resource
 def load_power_data():
     """从data文件夹加载四季电量消耗CSV，自动匹配列名"""
@@ -430,7 +437,7 @@ def load_power_data():
     add_log(f"✅ 成功加载 data/电量消耗.csv，共{len(power_df)}条记录")
     return power_df, None
 
-# -------------------------- 24小时逐时统计预测逻辑（不变） --------------------------
+# -------------------------- 24小时逐时统计预测逻辑 --------------------------
 def statistical_prediction(weather_info):
     """
     24小时逐时统计预测逻辑：
@@ -508,7 +515,7 @@ def statistical_prediction(weather_info):
     
     return pd.DataFrame(result)
 
-# -------------------------- 客流预测（不变） --------------------------
+# -------------------------- 客流预测 --------------------------
 def predict_passenger_flow(date, line_id, is_workday, weather_data):
     hours = list(range(6, 22))
     base_flow = 150 if is_workday else 100
@@ -526,7 +533,7 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
         predictions.append(round(flow * (0.9 + np.random.random() * 0.2)))
     return hours, predictions
 
-# -------------------------- ✅ 双算法求解器（不变，仅修改排班表生成） --------------------------
+# -------------------------- 双算法求解器 --------------------------
 def tournament(rng: random.Random, scored: list[tuple[float, list[float], Solution]], size: int = 3) -> list[float]:
     picks = [rng.choice(scored) for _ in range(size)]
     picks.sort(key=lambda item: item[0])
@@ -552,7 +559,7 @@ def mutate(rng: random.Random, chromosome: list[float], rate: float) -> None:
 def fitness(solution: Solution) -> float:
     return solution.objective
 
-# -------------------------- ✅ 核心：生成标准格式排班表（按车辆分组+双向分栏+电量标记） --------------------------
+# -------------------------- 生成标准格式排班表 --------------------------
 def generate_standard_schedule(raw_schedule, power_prediction_table, initial_battery=100.0, power_threshold=20.0):
     """
     生成标准格式排班表：
@@ -660,7 +667,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     
     add_log("✅ 成功读取页面生成的排班表和统计预测表")
     
-    # 配置参数（和你原代码完全一致）
+    # 配置参数
     config = Config(
         charger_capacity={"A": 40, "B": 40},
         rest_minutes=25.0,
@@ -701,7 +708,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     status_text.text("正在运行贪心算法（粗略解）...")
     progress_bar.progress(5)
     
-    # 调用贪心算法（和你给的命令行代码完全一致）
+    # 调用贪心算法
     greedy_solution = decode_with_random_keys(
         trips,
         hour_params,
@@ -820,7 +827,7 @@ def optimize_schedule(predictions, vehicle_count, initial_battery, solve_time_li
     
     return best_solution, df
 
-# -------------------------- 侧边栏（不变） --------------------------
+# -------------------------- 侧边栏 --------------------------
 st.sidebar.title("🚌 智能公交调度系统")
 st.sidebar.markdown("""<style>[data-testid="stSidebar"] {background-color: #f0f5fa;}</style>""", unsafe_allow_html=True)
 st.sidebar.divider()
@@ -828,7 +835,7 @@ page = st.sidebar.radio("功能模块", ["📅 今日调度", "📊 数据管理
 st.sidebar.divider()
 st.sidebar.info("智能公交调度系统")
 
-# -------------------------- 今日调度（不变） --------------------------
+# -------------------------- 今日调度 --------------------------
 if page == "📅 今日调度":
     st.header("🚌 智能公交调度", divider="blue")
     col1, col2 = st.columns(2)
@@ -945,7 +952,7 @@ if page == "📅 今日调度":
     with row2_col2:
         st.metric("目标值", f"{st.session_state.current_objective:.2f}")
 
-# -------------------------- 数据管理页面（不变） --------------------------
+# -------------------------- 数据管理页面 --------------------------
 elif page == "📊 数据管理":
     st.header("📊 数据管理", divider="blue")
     
@@ -1003,7 +1010,7 @@ elif page == "📊 数据管理":
     except Exception as e:
         st.error(f"❌ 加载失败：{str(e)}")
 
-# -------------------------- 统计预测结果页面（不变） --------------------------
+# -------------------------- 统计预测结果页面 --------------------------
 elif page == "📊 统计预测结果":
     st.header("📊 24小时逐时统计预测结果", divider="blue")
     
@@ -1022,7 +1029,7 @@ elif page == "📊 统计预测结果":
         st.dataframe(
             st.session_state.power_prediction_table, 
             use_container_width=True, 
-            height=800  # 足够显示24行
+            height=800
         )
         
         # 下载合并后的CSV
@@ -1036,7 +1043,7 @@ elif page == "📊 统计预测结果":
         
         st.success("✅ 所有数据100%来自你上传的CSV文件，完全匹配当日天气和季节")
 
-# -------------------------- 优化求解页面（不变） --------------------------
+# -------------------------- 优化求解页面 --------------------------
 elif page == "⚙️ 优化求解":
     st.header("⚙️ 优化求解", divider="blue")
     
@@ -1067,7 +1074,7 @@ elif page == "⚙️ 优化求解":
     else:
         st.info("请先在「今日调度」页面点击「开始优化求解」")
 
-# -------------------------- 排班结果页面（不变，显示新格式） --------------------------
+# -------------------------- 排班结果页面 --------------------------
 elif page == "📋 排班结果":
     st.header("📋 排班结果", divider="blue")
     
