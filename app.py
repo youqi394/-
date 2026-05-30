@@ -161,16 +161,19 @@ h1, h2, h3 {
 }
 
 /* 主页面背景 */
+/* 主页面背景：和侧边栏同浅蓝色底色 */
 .stApp {
+    background-color: #BFE4F9;
     background-image: url("https://img1.baidu.com/it/u=2646690913,1561802417&fm=253&fmt=auto&app=138&f=JPEG?w=1200&h=800");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
     background-attachment: fixed;
 }
+/* 主页面内层白色半透明遮罩，和侧边栏样式统一 */
 .stApp > div:first-child > div:first-child {
     background-color: rgba(255, 255, 255, 0.85);
-    border-radius: 12px;
+    border-radius: 8px;
     padding: 16px;
 }
 
