@@ -295,7 +295,9 @@ if 'best_chromosome' not in st.session_state:
 # 记录当前选择的求解方式（跨页面使用）
 if 'current_solve_mode' not in st.session_state:
     st.session_state.current_solve_mode = ""
-
+# 新增：表单验证警告信息
+if 'form_warning' not in st.session_state:
+    st.session_state.form_warning = ""
 
 # ==================== 工具函数（完全保留原逻辑） ====================
 def add_log(message):
@@ -1102,15 +1104,33 @@ if page == "今日调度":
         solve_time = st.number_input("求解时间上限（秒）", 5, 600, 45)
 
     # 求解方式选择
+        # 求解方式选择
+       # 求解方式选择
     st.divider()
+
+    # 增强版：显示警告 + 自动清除
+    if st.session_state.form_warning:
+        # ↓↓↓ 自动清除逻辑就加在这里 ↓↓↓
+        # 当用户选择了所有必填参数时，警告自动消失
+        if line and timetable_type and solve_time:
+            st.session_state.form_warning = ""
+        else:
+            st.error(st.session_state.form_warning)
+        # ↑↑↑ 自动清除逻辑就加在这里 ↑↑↑
+
     solve_mode = st.selectbox("优化求解方式", ["粗略求解（贪心算法）", "精确求解（遗传算法）"])
-    # 保存当前选择的模式，供其他页面判断
     st.session_state.current_solve_mode = solve_mode
     st.divider()
 
     btn1, btn2, btn3, btn4, btn5 = st.columns(5, gap="small")
-    with btn1:
-        if st.button("读取班次表"):
+  with btn1:
+    if st.button("读取班次表"):
+        # 新增：表单验证逻辑
+        if not line or not timetable_type or not solve_time:
+            st.session_state.form_warning = "⚠️ 您还未选择班次表、线路、求解时间上限等参数，请先选择后再读取班次表"
+        else:
+            # 清除警告信息
+            st.session_state.form_warning = ""
             st.session_state.start_time = time.time()
             timetable_df, timetable_error = load_timetable_data(timetable_type)
             if timetable_df is not None:
