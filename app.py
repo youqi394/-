@@ -69,11 +69,9 @@ header[data-testid="stHeader"] {
 }# ==================== 全局页面样式（无白条 + 侧边栏正常显示） ====================
 hide_streamlit_style = """
 <style>
-/* 隐藏默认菜单和页脚 */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* 关键：让顶部导航栏变透明，消除白条，同时不影响侧边栏按钮 */
 header[data-testid="stHeader"] {
     background-color: transparent !important;
     box-shadow: none !important;
@@ -84,7 +82,7 @@ header[data-testid="stHeader"] svg {
     fill: #2c3e50 !important;
 }
 
-/* 按钮美化 */
+
 .stButton>button {
     height: 50px;
     font-size: 16px;
@@ -101,7 +99,7 @@ header[data-testid="stHeader"] svg {
     box-shadow: 0 4px 12px rgba(31, 119, 180, 0.3);
 }
 
-/* 指标卡片美化 */
+
 .stMetric {
     background-color: #f8f9fa;
     padding: 12px;
@@ -114,7 +112,7 @@ h1, h2, h3 {
     font-weight: 600;
 }
 
-/* 进度条样式 */
+
 .stProgress {
     display: flex;
     flex-direction: column;
@@ -154,7 +152,7 @@ h1, h2, h3 {
     overflow: visible !important;
 }
 
-/* 侧边栏背景 + 样式 */
+
 [data-testid="stSidebar"] {
     background-color: #f0f5fa;
     background-image: url("https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
@@ -170,7 +168,7 @@ h1, h2, h3 {
     border-radius: 8px;
 }
 
-/* 主页面背景 */
+
 .stApp {
     background-image: url("https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80");
     background-size: cover;
@@ -184,7 +182,7 @@ h1, h2, h3 {
     padding: 16px;
 }
 
-/* 侧边栏文字、单选按钮美化 */
+
 [data-testid="stSidebar"] p:has(label) {
     font-size: 1.1rem !important;
     font-weight: 700 !important;
