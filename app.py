@@ -1081,34 +1081,10 @@ if page == "今日调度":
                     add_log(f"求解失败：{e}")
                     st.error(f"求解失败：{e}")
 
-    with btn5:
+        with btn5:
         if st.button("导出排班结果"):
             if st.session_state.greedy_schedule_data is not None:
-                dispatch_date = st.session_state.weather_data["date"] if st.session_state.weather_data else datetime.now().date()
-                st.success("已生成导出文件！请点击下方按钮下载：")
-                
-                # 立即显示所有下载按钮
-                csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
-                st.download_button("下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
-                
-                if st.session_state.greedy_charge_data is not None:
-                    csv_greedy_charge = st.session_state.greedy_charge_data.to_csv(index=False, encoding='utf-8-sig')
-                    st.download_button("下载粗略解充电表", csv_greedy_charge, f"公交充电表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
-                
-                # 仅遗传模式才导出遗传相关文件
-                if st.session_state.current_solve_mode == "精确求解（遗传算法）" and st.session_state.schedule_data is not None:
-                    csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
-                    st.download_button("下载精确解排班表", csv_genetic, f"公交排班表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
-                    
-                    if st.session_state.charge_data is not None:
-                        csv_genetic_charge = st.session_state.charge_data.to_csv(index=False, encoding='utf-8-sig')
-                        st.download_button("下载精确解充电表", csv_genetic_charge, f"公交充电表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
-                    
-                    if st.session_state.ga_history:
-                        hist_df = pd.DataFrame(st.session_state.ga_history)
-                        csv_hist = hist_df.to_csv(index=False, encoding="utf-8-sig")
-                        st.download_button("下载遗传迭代历史", csv_hist, f"GA_历史记录_{dispatch_date.strftime('%Y%m%d')}.csv")
-                
+                st.success("数据已准备完成，请切换到【排班结果】页面进行下载！")
                 st.session_state.progress = 100
                 st.session_state.current_stage = "全部完成"
             else:
@@ -1245,6 +1221,7 @@ elif page == "优化求解":
 elif page == "排班结果":
     st.header("排班结果", divider="blue")
     solve_mode = st.session_state.current_solve_mode
+    dispatch_date = st.session_state.weather_data["date"] if st.session_state.weather_data else datetime.now().date()
 
     # 展示粗略解（贪心）排班 & 充电表
     if st.session_state.greedy_schedule_data is not None:
@@ -1256,6 +1233,18 @@ elif page == "排班结果":
         if st.session_state.greedy_charge_data is not None:
             st.dataframe(st.session_state.greedy_charge_data, use_container_width=True)
         st.divider()
+
+        # ========== 下载按钮区域 ==========
+        st.subheader("文件下载")
+        csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
+        st.download_button("下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
+
+        if st.session_state.greedy_charge_data is not None:
+            csv_greedy_charge = st.session_state.greedy_charge_data.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button("下载粗略解充电表", csv_greedy_charge, f"公交充电表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
+        st.divider()
+        # =================================
+
     else:
         st.info("暂无粗略解数据，请先在【今日调度】完成求解")
 
@@ -1269,6 +1258,23 @@ elif page == "排班结果":
             st.subheader("精确解（遗传算法）- 充电记录")
             if st.session_state.charge_data is not None:
                 st.dataframe(st.session_state.charge_data, use_container_width=True)
+            st.divider()
+
+            # ========== 遗传算法文件下载 ==========
+            st.subheader("文件下载")
+            csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button("下载精确解排班表", csv_genetic, f"公交排班表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
+
+            if st.session_state.charge_data is not None:
+                csv_genetic_charge = st.session_state.charge_data.to_csv(index=False, encoding='utf-8-sig')
+                st.download_button("下载精确解充电表", csv_genetic_charge, f"公交充电表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
+
+            if st.session_state.ga_history:
+                hist_df = pd.DataFrame(st.session_state.ga_history)
+                csv_hist = hist_df.to_csv(index=False, encoding="utf-8-sig")
+                st.download_button("下载遗传迭代历史", csv_hist, f"GA_历史记录_{dispatch_date.strftime('%Y%m%d')}.csv")
+            # =================================
+
         else:
             if st.session_state.greedy_schedule_data is not None:
                 st.info("暂无精确解数据")
