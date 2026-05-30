@@ -1241,3 +1241,34 @@ elif page == "优化求解":
                 st.subheader("每代迭代明细")
                 hist_df = pd.DataFrame(st.session_state.ga_history)
                 st.dataframe(hist_df, use_container_width=True)
+                # -------------------------- 排班结果页面（新增完整逻辑） --------------------------
+elif page == "排班结果":
+    st.header("排班结果", divider="blue")
+    solve_mode = st.session_state.current_solve_mode
+
+    # 展示粗略解（贪心）排班 & 充电表
+    if st.session_state.greedy_schedule_data is not None:
+        st.subheader("粗略解（贪心算法）- 排班明细")
+        st.dataframe(st.session_state.greedy_schedule_data, use_container_width=True)
+        st.divider()
+
+        st.subheader("粗略解（贪心算法）- 充电记录")
+        if st.session_state.greedy_charge_data is not None:
+            st.dataframe(st.session_state.greedy_charge_data, use_container_width=True)
+        st.divider()
+    else:
+        st.info("暂无粗略解数据，请先在【今日调度】完成求解")
+
+    # 精确解（遗传）仅在对应求解模式下展示
+    if solve_mode == "精确求解（遗传算法）":
+        if st.session_state.schedule_data is not None:
+            st.subheader("精确解（遗传算法）- 排班明细")
+            st.dataframe(st.session_state.schedule_data, use_container_width=True)
+            st.divider()
+
+            st.subheader("精确解（遗传算法）- 充电记录")
+            if st.session_state.charge_data is not None:
+                st.dataframe(st.session_state.charge_data, use_container_width=True)
+        else:
+            if st.session_state.greedy_schedule_data is not None:
+                st.info("暂无精确解数据")
