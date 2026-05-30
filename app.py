@@ -56,18 +56,14 @@ if SOLVER_IMPORT_ERROR is not None:
 # ==================== 全局页面样式（仅彻底修正进度条部分） ====================
 # ==================== 全局页面样式（修复CSS错乱 + 侧边栏/主页面双背景生效） ====================
 # ==================== 全局页面样式（修复白条 + 双背景生效） ====================
-hide_streamlit_style = """
-<style>
-/* 隐藏默认菜单和页脚 */
-#MainMenu {visibility: hidden;}
-foote# ==================== 全局页面样式（无白条 + 侧边栏正常显示 + 双背景生效） ====================
+# ==================== 全局页面样式（无白条 + 侧边栏正常显示 + 无非法字符） ====================
 hide_streamlit_style = """
 <style>
 /* 隐藏默认菜单和页脚 */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* 让顶部导航栏变透明，消除白条，同时不影响侧边栏按钮 */
+/* 让顶部导航栏变透明，消除白条 */
 header[data-testid="stHeader"] {
     background-color: transparent !important;
     box-shadow: none !important;
