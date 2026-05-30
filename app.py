@@ -53,10 +53,7 @@ if SOLVER_IMPORT_ERROR is not None:
     st.code("\n".join(str(path) for path in SOLVER_SEARCH_DIRS), language="text")
     st.stop()
 
-# ==================== 全局页面样式（仅彻底修正进度条部分） ====================
-# ==================== 全局页面样式（修复CSS错乱 + 侧边栏/主页面双背景生效） ====================
-# ==================== 全局页面样式（修复白条 + 双背景生效） ====================
-# ==================== 全局页面样式（无白条 + 侧边栏正常显示 + 无非法字符） ====================
+# ==================== 全局页面样式（已修改侧边栏单选按钮样式） ====================
 hide_streamlit_style = """
 <style>
 /* 隐藏默认菜单和页脚 */
@@ -161,7 +158,6 @@ h1, h2, h3 {
 }
 
 /* 主页面背景 */
-/* 主页面背景：和侧边栏同浅蓝色底色 */
 .stApp {
     background-color: #E6F0FF;
     background-image: url("https://img1.baidu.com/it/u=2646690913,1561802417&fm=253&fmt=auto&app=138&f=JPEG?w=1200&h=800");
@@ -177,51 +173,66 @@ h1, h2, h3 {
     padding: 16px;
 }
 
-/* ========== 【修改开始】全新侧边栏单选样式（仅此处改动） ========== */
-[data-testid="stSidebar"] p:has(label) {
+/* ========== 【全新侧边栏单选样式 - 完全符合您的要求】 ========== */
+/* 功能模块标题样式 */
+[data-testid="stSidebar"] .stRadio > label {
     font-size: 1.1rem !important;
     font-weight: 700 !important;
     color: #2c3e50 !important;
     margin: 1rem 0 0.6rem 0 !important;
 }
-/* 强制隐藏原生圆形单选按钮 */
-[data-testid="stSidebar"] .stRadio [role="radio"] {
-    display: none !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    position: absolute !important;
-}
+
+/* 单选按钮组容器 */
 [data-testid="stSidebar"] .stRadio > div {
     gap: 0.5rem !important;
     display: flex !important;
     flex-direction: column !important;
 }
-/* 单选选项整体样式 */
-[data-testid="stSidebar"] .stRadio label {
+
+/* 强制隐藏原生圆形单选按钮 */
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label > div:first-child {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    position: absolute !important;
+}
+
+/* 单选选项整体样式 - 默认状态：黑色字体 + 透明背景 */
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
     font-size: 1rem !important;
     font-weight: 500 !important;
     padding: 0.6rem 0.8rem !important;
-    border-radius: 12px !important;
+    border-radius: 8px !important;  /* 圆角大小，可根据需要调整 */
     transition: all 0.25s ease !important;
     margin: 0 !important;
     cursor: pointer !important;
     width: 100% !important;
     box-sizing: border-box !important;
-    /* 默认：黑色字体 + 透明背景 */
-    color: #000000 !important;
+    color: #000000 !important;  /* 黑色字体 */
     background: transparent !important;
 }
-/* 鼠标悬浮效果 */
-[data-testid="stSidebar"] .stRadio label:hover {
+
+/* 鼠标悬浮效果：浅灰色背景 */
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:hover {
     background-color: #e4edf5 !important;
 }
+
 /* 选中状态：蓝色圆角背景 + 白色字体 */
-[data-testid="stSidebar"] .stRadio label[data-checked="true"] {
-    background-color: #1f77b4 !important;
-    color: #ffffff !important;
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] input[type="radio"]:checked + div {
+    background-color: #1f77b4 !important;  /* 蓝色背景 */
+    color: #ffffff !important;  /* 白色字体 */
     font-weight: 600 !important;
+    border-radius: 8px !important;
+    padding: 0.6rem 0.8rem !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
 }
-/* ========== 【修改结束】 ========== */
+
+/* 确保选中状态下的文本颜色正确 */
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] input[type="radio"]:checked + div p {
+    color: #ffffff !important;
+}
+/* ========== 【侧边栏单选样式修改结束】 ========== */
 </style>
 """
 
@@ -1056,10 +1067,7 @@ def optimize_genetic_full(
 
 
 # ==================== 侧边栏 & 页面布局（完全保留原逻辑） ====================
-# ==================== 侧边栏 & 页面布局（完全保留原逻辑） ====================
 st.sidebar.title("智能公交调度系统")
-
-
 
 st.sidebar.divider()
 page = st.sidebar.radio("功能模块", ["今日调度", "数据管理", "统计预测结果", "优化求解", "排班结果"])
@@ -1322,120 +1330,4 @@ elif page == "统计预测结果":
         carbon_season = get_carbon_season(current_date)
         season_name_map = {"summer": "夏季", "winter": "冬季", "annual": "全年"}
         st.subheader(
-            f"调度日期：{current_date.strftime('%Y-%m-%d')} | 当日天气：{st.session_state.weather_data['weather'] if st.session_state.weather_data else '无'}")
-        st.subheader(f"电量季节：{power_season} | 碳排放季节：{season_name_map[carbon_season]}")
-        st.dataframe(st.session_state.power_prediction_table, use_container_width=True, height=800)
-        csv_data = st.session_state.power_prediction_table.to_csv(index=False, encoding='utf-8-sig')
-        st.download_button("下载24小时逐时统计预测结果表", csv_data,
-                           f"24小时逐时统计预测结果_{current_date.strftime('%Y%m%d')}.csv")
-        st.success("所有数据来自上传CSV文件，匹配当日天气和季节")
-
-# -------------------------- 优化求解页面 --------------------------
-elif page == "优化求解":
-    st.header("优化求解", divider="blue")
-    solve_mode = st.session_state.current_solve_mode
-
-    # 粗略求解：只展示贪心结果
-    if solve_mode == "粗略求解（贪心算法）":
-        if st.session_state.greedy_solution:
-            st.subheader("粗略解（贪心算法）")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("最优目标值", f"{st.session_state.greedy_objective:.2f}")
-            with col2:
-                st.metric("使用车辆数", st.session_state.greedy_solution.vehicles_used)
-        else:
-            st.info("请先在「今日调度」页面点击「开始优化求解」")
-
-    # 精确求解：同时展示贪心 + 遗传
-    elif solve_mode == "精确求解（遗传算法）":
-        if st.session_state.greedy_solution:
-            st.subheader("基准解（贪心算法）")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("最优目标值", f"{st.session_state.greedy_objective:.2f}")
-            with col2:
-                st.metric("使用车辆数", st.session_state.greedy_solution.vehicles_used)
-            st.divider()
-
-        if st.session_state.optimization_result:
-            st.subheader("精确解（遗传算法）")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("最优目标值", f"{st.session_state.current_objective:.2f}")
-            with col2:
-                st.metric("使用车辆数", st.session_state.optimization_result.vehicles_used)
-            with col3:
-                st.metric("运行耗时(s)", f"{st.session_state.optimization_result.runtime_sec:.2f}")
-            if st.session_state.convergence_data:
-                st.subheader("遗传算法收敛曲线")
-                conv_df = pd.DataFrame(st.session_state.convergence_data, columns=["代次", "目标值"])
-                st.line_chart(conv_df.set_index("代次"))
-            if st.session_state.ga_history:
-                st.subheader("每代迭代明细")
-                hist_df = pd.DataFrame(st.session_state.ga_history)
-                st.dataframe(hist_df, use_container_width=True)
-                # -------------------------- 排班结果页面（新增完整逻辑） --------------------------
-elif page == "排班结果":
-    st.header("排班结果", divider="blue")
-    solve_mode = st.session_state.current_solve_mode
-    dispatch_date = st.session_state.weather_data["date"] if st.session_state.weather_data else datetime.now().date()
-
-    # 展示粗略解（贪心）排班 & 充电表
-    if st.session_state.greedy_schedule_data is not None:
-        st.subheader("粗略解（贪心算法）- 排班明细")
-        st.dataframe(st.session_state.greedy_schedule_data, use_container_width=True)
-        st.divider()
-
-        st.subheader("粗略解（贪心算法）- 充电记录")
-        if st.session_state.greedy_charge_data is not None:
-            st.dataframe(st.session_state.greedy_charge_data, use_container_width=True)
-        st.divider()
-
-        # ========== 下载按钮区域 ==========
-        st.subheader("文件下载")
-        csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
-        st.download_button("下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
-
-        if st.session_state.greedy_charge_data is not None:
-            csv_greedy_charge = st.session_state.greedy_charge_data.to_csv(index=False, encoding='utf-8-sig')
-            st.download_button("下载粗略解充电表", csv_greedy_charge,
-                               f"公交充电表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
-        st.divider()
-        # =================================
-
-    else:
-        st.info("暂无粗略解数据，请先在【今日调度】完成求解")
-
-    # 精确解（遗传）仅在对应求解模式下展示
-    if solve_mode == "精确求解（遗传算法）":
-        if st.session_state.schedule_data is not None:
-            st.subheader("精确解（遗传算法）- 排班明细")
-            st.dataframe(st.session_state.schedule_data, use_container_width=True)
-            st.divider()
-
-            st.subheader("精确解（遗传算法）- 充电记录")
-            if st.session_state.charge_data is not None:
-                st.dataframe(st.session_state.charge_data, use_container_width=True)
-            st.divider()
-
-            # ========== 遗传算法文件下载 ==========
-            st.subheader("文件下载")
-            csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
-            st.download_button("下载精确解排班表", csv_genetic,
-                               f"公交排班表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
-
-            if st.session_state.charge_data is not None:
-                csv_genetic_charge = st.session_state.charge_data.to_csv(index=False, encoding='utf-8-sig')
-                st.download_button("下载精确解充电表", csv_genetic_charge,
-                                   f"公交充电表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
-
-            if st.session_state.ga_history:
-                hist_df = pd.DataFrame(st.session_state.ga_history)
-                csv_hist = hist_df.to_csv(index=False, encoding="utf-8-sig")
-                st.download_button("下载遗传迭代历史", csv_hist, f"GA_历史记录_{dispatch_date.strftime('%Y%m%d')}.csv")
-            # =================================
-
-        else:
-            if st.session_state.greedy_schedule_data is not None:
-                st.info("暂无精确解数据")
+            f"调度日期：{current_date.strftime('%
