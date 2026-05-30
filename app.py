@@ -55,11 +55,20 @@ if SOLVER_IMPORT_ERROR is not None:
 
 # ==================== 全局页面样式（仅彻底修正进度条部分） ====================
 # ==================== 全局页面样式（修复CSS错乱 + 侧边栏/主页面双背景生效） ====================
+# ==================== 全局页面样式（修复白条 + 双背景生效） ====================
 hide_streamlit_style = """
 <style>
+/* 隐藏默认菜单和页脚 */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
+/* 关键：隐藏顶部导航栏，消除白条 */
+header[data-testid="stHeader"] {
+    visibility: hidden !important;
+    height: 0 !important;
+}
+
+/* 按钮美化 */
 .stButton>button {
     height: 50px;
     font-size: 16px;
@@ -75,12 +84,15 @@ footer {visibility: hidden;}
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(31, 119, 180, 0.3);
 }
+
+/* 指标卡片美化 */
 .stMetric {
     background-color: #f8f9fa;
     padding: 12px;
     border-radius: 10px;
     border-left: 4px solid #1f77b4;
 }
+
 h1, h2, h3 {
     color: #2c3e50;
     font-weight: 600;
