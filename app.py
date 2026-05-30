@@ -127,7 +127,7 @@ h1, h2, h3 {
 [data-testid="stSidebar"] {
     background-color: #f0f5fa;
     /* 加入适配的背景图 */
-    background-image: url("https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
+    background-image: url("https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
     background-size: cover; /* 图片铺满整个侧边栏 */
     background-position: center; /* 图片居中显示 */
     background-repeat: no-repeat; /* 图片不重复平铺 */
