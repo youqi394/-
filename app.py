@@ -163,7 +163,7 @@ h1, h2, h3 {
 /* 主页面背景 */
 /* 主页面背景：和侧边栏同浅蓝色底色 */
 .stApp {
-    background-color: #BFE4F9;
+    background-color: #E6F0FF;
     background-image: url("https://img1.baidu.com/it/u=2646690913,1561802417&fm=253&fmt=auto&app=138&f=JPEG?w=1200&h=800");
     background-size: cover;
     background-position: center;
