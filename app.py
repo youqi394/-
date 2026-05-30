@@ -178,49 +178,66 @@ h1, h2, h3 {
 }
 
 /* ========== 【修改开始】全新侧边栏单选样式（仅此处改动） ========== */
-[data-testid="stSidebar"] p:has(label) {
+/* ========== 【全新侧边栏单选样式 - 完全符合您的要求】 ========== */
+/* 功能模块标题样式 */
+[data-testid="stSidebar"] .stRadio > label {
     font-size: 1.1rem !important;
     font-weight: 700 !important;
     color: #2c3e50 !important;
     margin: 1rem 0 0.6rem 0 !important;
 }
-/* 强制隐藏原生圆形单选按钮 */
-[data-testid="stSidebar"] .stRadio [role="radio"] {
-    display: none !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    position: absolute !important;
-}
+
+/* 单选按钮组容器 */
 [data-testid="stSidebar"] .stRadio > div {
     gap: 0.5rem !important;
     display: flex !important;
     flex-direction: column !important;
 }
-/* 单选选项整体样式 */
-[data-testid="stSidebar"] .stRadio label {
+
+/* 强制隐藏原生圆形单选按钮（彻底移除红色圆点） */
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label > div:first-child {
+    display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    position: absolute !important;
+}
+
+/* 单选选项整体样式 - 默认状态：黑色字体 + 透明背景 */
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
     font-size: 1rem !important;
     font-weight: 500 !important;
     padding: 0.6rem 0.8rem !important;
-    border-radius: 12px !important;
+    border-radius: 8px !important;  /* 圆角大小，可根据需要调整 */
     transition: all 0.25s ease !important;
     margin: 0 !important;
     cursor: pointer !important;
     width: 100% !important;
     box-sizing: border-box !important;
-    /* 默认：黑色字体 + 透明背景 */
-    color: #000000 !important;
+    color: #000000 !important;  /* 黑色字体 */
     background: transparent !important;
 }
-/* 鼠标悬浮效果 */
-[data-testid="stSidebar"] .stRadio label:hover {
+
+/* 鼠标悬浮效果：浅灰色背景 */
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:hover {
     background-color: #e4edf5 !important;
 }
+
 /* 选中状态：蓝色圆角背景 + 白色字体 */
-[data-testid="stSidebar"] .stRadio label[data-checked="true"] {
-    background-color: #1f77b4 !important;
-    color: #ffffff !important;
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] input[type="radio"]:checked + div {
+    background-color: #1f77b4 !important;  /* 蓝色背景 */
+    color: #ffffff !important;  /* 白色字体 */
     font-weight: 600 !important;
+    border-radius: 8px !important;
+    padding: 0.6rem 0.8rem !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
 }
+
+/* 确保选中状态下的文本颜色正确 */
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] input[type="radio"]:checked + div p {
+    color: #ffffff !important;
+}
+/* ========== 【侧边栏单选样式修改结束】 ========== */
 /* ========== 【修改结束】 ========== */
 </style>
 """
