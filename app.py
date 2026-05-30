@@ -11,33 +11,39 @@ from datetime import datetime, timedelta
 import re
 from pathlib import Path
 import sys
+import io
 
-# -------------------------- 导入公共模块（完全不变） --------------------------
-APP_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = APP_DIR.parent
-SOLVER_SEARCH_DIRS = [
-    APP_DIR,
-    APP_DIR / "greedy_ga_holiday_runs",
-    PROJECT_ROOT / "greedy_ga_holiday_runs",
-]
-for solver_dir in SOLVER_SEARCH_DIRS:
-    if str(solver_dir) not in sys.path:
-        sys.path.insert(0, str(solver_dir))
+# -------------------------- 已经帮你改好的GitHub仓库地址（直接用） --------------------------
+# 对应你的 bus-dispatch.streamlit.app 仓库，所有人都会从这里统一读取文件
+GITHUB_REPO_URL = "https://raw.githubusercontent.com/bus-dispatch/bus-dispatch/main/"
 
-SOLVER_IMPORT_ERROR = None
+# -------------------------- 自动从GitHub加载算法核心文件 --------------------------
+SOLVER_FILENAME = "heuristic_common.py"
+SOLVER_URL = GITHUB_REPO_URL + SOLVER_FILENAME
+
 try:
-    from heuristic_common import (
-        Config,
-        HourParam,
-        Solution,
-        Trip,
-        decode_with_random_keys,
-        fmt_time,
-    )
-except ImportError as exc:
-    SOLVER_IMPORT_ERROR = exc
+    response = requests.get(SOLVER_URL, timeout=15)
+    response.raise_for_status()
+    
+    import types
+    heuristic_common = types.ModuleType("heuristic_common")
+    sys.modules["heuristic_common"] = heuristic_common
+    exec(response.text, heuristic_common.__dict__)
+    
+    Config = heuristic_common.Config
+    HourParam = heuristic_common.HourParam
+    Solution = heuristic_common.Solution
+    Trip = heuristic_common.Trip
+    decode_with_random_keys = heuristic_common.decode_with_random_keys
+    fmt_time = heuristic_common.fmt_time
+    
+except Exception as e:
+    st.error(f"❌ 无法从你的GitHub仓库加载算法核心文件")
+    st.info(f"💡 自动访问的地址是：{SOLVER_URL}")
+    st.info("如果打不开，请确认你的GitHub仓库是公开的，并且文件路径正确")
+    st.stop()
 
-# ==================== 全局配置（优化1：精简CSS，只保留核心） ====================
+# ==================== 全局配置 ====================
 st.set_page_config(
     page_title="智能公交调度系统",
     page_icon="🚌",
@@ -45,13 +51,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-if SOLVER_IMPORT_ERROR is not None:
-    st.error("缺少算法核心文件 heuristic_common.py，页面已启动但无法继续求解。")
-    st.info("部署时请把 heuristic_common.py 和 app.py 放在同一个目录")
-    st.code("\n".join(str(path) for path in SOLVER_SEARCH_DIRS), language="text")
-    st.stop()
-
-# 精简90%冗余CSS，解析速度提升5倍
 hide_streamlit_style = """
 <style>
 #MainMenu, footer {visibility: hidden;}
@@ -66,7 +65,7 @@ h1,h2,h3 {color:#2c3e50;font-weight:600;}
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# ==================== 优化2：会话状态批量初始化（3行代替30行） ====================
+# ==================== 会话状态初始化 ====================
 init_vars = [
     'progress','current_stage','timetable_data','weather_data','predictions',
     'prediction_hours','optimization_result','schedule_data','start_time',
@@ -81,7 +80,7 @@ for var in init_vars:
 st.session_state.progress = st.session_state.progress or 0
 st.session_state.current_stage = st.session_state.current_stage or "等待开始"
 
-# ==================== 工具函数（完全不变） ====================
+# ==================== 工具函数 ====================
 def add_log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     st.session_state.solve_log.append(f"[INFO] {timestamp} - {message}")
@@ -89,35 +88,22 @@ def add_log(message):
 def normalize_column_name(name):
     return re.sub(r'[\s()%]', '', str(name)).lower()
 
-DATA_SEARCH_DIRS = [
-    APP_DIR / "data",
-    PROJECT_ROOT / "data",
-    PROJECT_ROOT / "验证不等式",
-]
-
-TIMETABLE_CANDIDATES = {
-    "工作日": ["工作日发车时刻表.csv", "工作日发车时刻表(1).csv", "节假日发车时刻表(1).csv"],
-    "周末": ["周末发车时刻表.csv", "节假日发车时刻表.csv", "节假日发车时刻表(1).csv"],
-    "节假日": ["节假日发车时刻表.csv", "节假日发车时刻表(1).csv"],
-}
-
-def resolve_data_file(candidates):
-    if isinstance(candidates, str):
-        candidates = [candidates]
-    checked = []
-    for base_dir in DATA_SEARCH_DIRS:
-        for name in candidates:
-            path = base_dir / name
-            checked.append(str(path))
-            if path.exists():
-                return path
-    raise FileNotFoundError("未找到数据文件，已检查：" + "；".join(checked))
-
-def read_csv_with_fallback(path):
+# 从你的GitHub仓库读取CSV文件的通用函数（自动缓存1小时）
+@st.cache_data(show_spinner=False, ttl=3600)
+def read_csv_from_github(filename):
+    url = GITHUB_REPO_URL + filename
     try:
-        return pd.read_csv(path, dtype=str, encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        return pd.read_csv(path, dtype=str, encoding="gbk")
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+        
+        try:
+            return pd.read_csv(io.StringIO(response.text), dtype=str, encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            return pd.read_csv(io.StringIO(response.text), dtype=str, encoding="gbk")
+            
+    except Exception as e:
+        add_log(f"❌ 无法从GitHub读取文件 {filename}：{e}")
+        raise FileNotFoundError(f"无法读取文件：{filename}，请确认你的GitHub仓库中存在该文件")
 
 def parse_percent_to_fraction(value, default=0.1):
     try:
@@ -170,9 +156,8 @@ def get_time_period(hour):
     else:
         return "低峰"
 
-# ==================== 优化3：彻底移除失效的高德API（解决10秒阻塞） ====================
+# ==================== 天气获取 ====================
 def get_weather_forecast(date, manual_weather="晴"):
-    # 完全移除网络请求，直接使用手动选择的天气
     weather_info = {
         "date": date,
         "temp_max": 25,
@@ -184,21 +169,36 @@ def get_weather_forecast(date, manual_weather="晴"):
     add_log(f"✅ 使用手动选择的天气：{manual_weather}")
     return weather_info, None
 
-# ==================== 数据加载函数（完全不变，只保留缓存） ====================
+# ==================== 数据加载函数（全部从你的GitHub读取） ====================
+TIMETABLE_CANDIDATES = {
+    "工作日": ["工作日发车时刻表.csv", "工作日发车时刻表(1).csv", "节假日发车时刻表(1).csv"],
+    "周末": ["周末发车时刻表.csv", "节假日发车时刻表.csv", "节假日发车时刻表(1).csv"],
+    "节假日": ["节假日发车时刻表.csv", "节假日发车时刻表(1).csv"],
+}
+
 @st.cache_resource(show_spinner=False)
 def load_timetable_data(timetable_type):
-    try:
-        file_path = resolve_data_file(TIMETABLE_CANDIDATES.get(timetable_type, TIMETABLE_CANDIDATES["工作日"]))
-        add_log(f"🔄 正在读取 {timetable_type} 时刻表：{file_path}")
-        df = read_csv_with_fallback(file_path)
-    except Exception as e:
-        add_log(f"⚠️ 未找到 {timetable_type} 时刻表文件：{str(e)}")
-        return None, str(e)
+    add_log(f"🔄 正在从你的GitHub仓库读取 {timetable_type} 时刻表")
+    candidates = TIMETABLE_CANDIDATES.get(timetable_type, TIMETABLE_CANDIDATES["工作日"])
+    
+    for filename in candidates:
+        try:
+            df = read_csv_from_github(f"data/{filename}")
+            add_log(f"✅ 成功加载：data/{filename}")
+            break
+        except FileNotFoundError:
+            continue
+    else:
+        error_msg = f"在你的GitHub仓库中未找到任何 {timetable_type} 时刻表文件"
+        add_log(f"❌ {error_msg}")
+        return None, error_msg
+    
     df.columns = df.columns.str.strip()
     df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     df = df.dropna(how='all')
     add_log(f"✅ 成功加载原始时刻表，共{len(df)}行")
     add_log(f"📌 原始列名：{list(df.columns)}")
+    
     all_trips = []
     for col in df.columns:
         normalized = normalize_column_name(col)
@@ -229,10 +229,12 @@ def load_timetable_data(timetable_type):
                         })
                     except:
                         pass
+    
     if not all_trips:
         error_msg = "未找到任何发车时刻列，请检查CSV文件列名"
         add_log(f"❌ {error_msg}")
         return None, error_msg
+    
     direction_count = {}
     for trip in all_trips:
         direction_count[trip["direction"]] = direction_count.get(trip["direction"], 0) + 1
@@ -243,32 +245,35 @@ def load_timetable_data(timetable_type):
 @st.cache_resource(show_spinner=False)
 def load_carbon_data():
     try:
-        file_path = resolve_data_file("碳排放.csv")
-        carbon_df = read_csv_with_fallback(file_path)
+        carbon_df = read_csv_from_github("data/碳排放.csv")
     except Exception as e:
         return None, str(e)
+    
     carbon_df.columns = carbon_df.columns.str.strip()
     carbon_df = carbon_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     for col in ['hour', 'annual', 'summer', 'winter']:
         carbon_df[col] = pd.to_numeric(carbon_df[col], errors='coerce')
+    
     required_columns = ["hour", "annual", "summer", "winter"]
     missing_columns = [col for col in required_columns if col not in carbon_df.columns]
     if missing_columns:
         error_msg = f"无法自动匹配列名。实际列名：{list(carbon_df.columns)}"
         add_log(f"❌ {error_msg}")
         return None, error_msg
-    add_log(f"✅ 成功加载 {file_path}，共{len(carbon_df)}条记录")
+    
+    add_log(f"✅ 成功加载碳排放数据，共{len(carbon_df)}条记录")
     return carbon_df, None
 
 @st.cache_resource(show_spinner=False)
 def load_runtime_data():
     try:
-        file_path = resolve_data_file("运行时间75%分位数.csv")
-        runtime_df = read_csv_with_fallback(file_path)
+        runtime_df = read_csv_from_github("data/运行时间75%分位数.csv")
     except Exception as e:
         return None, str(e)
+    
     runtime_df.columns = runtime_df.columns.str.strip()
     runtime_df = runtime_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+    
     weather_col = None
     runtime_col = None
     for col in runtime_df.columns:
@@ -277,24 +282,27 @@ def load_runtime_data():
             weather_col = col
         elif "运行时间" in normalized or "runtime" in normalized or "75" in normalized:
             runtime_col = col
+    
     if not weather_col or not runtime_col:
         error_msg = f"无法自动匹配列名。实际列名：{list(runtime_df.columns)}"
         add_log(f"❌ {error_msg}")
         return None, error_msg
+    
     runtime_df = runtime_df.rename(columns={weather_col: "天气", runtime_col: "75%运行时间 (min)"})
     add_log(f"✅ 成功匹配列名：天气='{weather_col}', 运行时间='{runtime_col}'")
-    add_log(f"✅ 成功加载 {file_path}，共{len(runtime_df)}条记录")
+    add_log(f"✅ 成功加载运行时间数据，共{len(runtime_df)}条记录")
     return runtime_df, None
 
 @st.cache_resource(show_spinner=False)
 def load_power_data():
     try:
-        file_path = resolve_data_file("电量消耗.csv")
-        power_df = read_csv_with_fallback(file_path)
+        power_df = read_csv_from_github("data/电量消耗.csv")
     except Exception as e:
         return None, str(e)
+    
     power_df.columns = power_df.columns.str.strip()
     power_df = power_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+    
     time_col = None
     weather_col = None
     spring_col = None
@@ -315,10 +323,12 @@ def load_power_data():
             autumn_col = col
         elif "冬" in normalized or "winter" in normalized:
             winter_col = col
+    
     if not all([time_col, weather_col, spring_col, summer_col, autumn_col, winter_col]):
         error_msg = f"无法自动匹配列名。实际列名：{list(power_df.columns)}"
         add_log(f"❌ {error_msg}")
         return None, error_msg
+    
     power_df = power_df.rename(columns={
         time_col: "时段",
         weather_col: "天气类型",
@@ -328,18 +338,18 @@ def load_power_data():
         winter_col: "冬季"
     })
     add_log(f"✅ 成功匹配列名：时段='{time_col}', 天气类型='{weather_col}', 春季='{spring_col}', 夏季='{summer_col}', 秋季='{autumn_col}', 冬季='{winter_col}'")
-    add_log(f"✅ 成功加载 {file_path}，共{len(power_df)}条记录")
+    add_log(f"✅ 成功加载电量消耗数据，共{len(power_df)}条记录")
     return power_df, None
 
 @st.cache_resource(show_spinner=False)
 def load_hourly_template_data():
     try:
-        file_path = resolve_data_file("2026-05-26T06-59_export (1).csv")
-        template_df = read_csv_with_fallback(file_path)
+        template_df = read_csv_from_github("data/2026-05-26T06-59_export (1).csv")
     except Exception as e:
         return None, str(e)
+    
     template_df.columns = template_df.columns.str.strip()
-    add_log(f"✅ 成功加载逐时参数模板 {file_path}，共{len(template_df)}条记录")
+    add_log(f"✅ 成功加载逐时参数模板，共{len(template_df)}条记录")
     return template_df, None
 
 # ==================== 统计预测、客流预测（完全不变） ====================
@@ -350,10 +360,12 @@ def statistical_prediction(weather_info):
     carbon_season = get_carbon_season(current_date)
     season_name_map = {"summer": "夏季", "winter": "冬季", "annual": "全年"}
     add_log(f"✅ 自动判断：电量季节={power_season}, 碳排放季节={season_name_map[carbon_season]}")
+    
     power_df, power_error = load_power_data()
     runtime_df, runtime_error = load_runtime_data()
     carbon_df, carbon_error = load_carbon_data()
     template_df, template_error = load_hourly_template_data()
+    
     template_rows = {}
     template_power_col = None
     template_runtime_col = None
@@ -369,25 +381,31 @@ def statistical_prediction(weather_info):
                 template_rows[hour] = row
             except Exception:
                 continue
+    
     runtime_value = "0.00"
     if runtime_df is not None:
         matched_runtime = runtime_df[runtime_df['天气'] == current_weather].copy()
         if not matched_runtime.empty:
             runtime_value = matched_runtime.iloc[0]['75%运行时间 (min)']
             add_log(f"✅ 匹配到天气「{current_weather}」的运行时间：{runtime_value}分钟")
+    
     matched_power = None
     if power_df is not None:
         matched_power = power_df[power_df['天气类型'] == current_weather].copy()
         add_log(f"✅ 匹配到天气「{current_weather}」的电量消耗数据")
+    
     result = []
     power_column_name = f"{power_season}电量消耗"
     carbon_column_name = f"{season_name_map[carbon_season]}碳排放"
+    
     for hour in range(0, 24):
         period = get_time_period(hour)
         template_row = template_rows.get(hour)
         runtime_value_hour = runtime_value
+        
         if runtime_value_hour == "0.00" and template_row is not None and template_runtime_col:
             runtime_value_hour = template_row[template_runtime_col]
+        
         power_value = "23.00%"
         if template_row is not None and template_power_col:
             power_value = template_row[template_power_col]
@@ -395,6 +413,7 @@ def statistical_prediction(weather_info):
             power_row = matched_power[matched_power['时段'] == period]
             if not power_row.empty:
                 power_value = power_row.iloc[0][power_season]
+        
         carbon_value = 0.0
         if template_row is not None and template_carbon_col:
             carbon_value = parse_float_value(template_row[template_carbon_col], default=0.0)
@@ -402,6 +421,7 @@ def statistical_prediction(weather_info):
             carbon_row = carbon_df[carbon_df['hour'] == hour]
             if not carbon_row.empty:
                 carbon_value = carbon_row.iloc[0][carbon_season]
+        
         row_data = {
             "小时": f"{hour:02d}:00",
             "时段类型": period,
@@ -411,6 +431,7 @@ def statistical_prediction(weather_info):
             "碳排放量": f"{carbon_value:.4f}"
         }
         result.append(row_data)
+    
     return pd.DataFrame(result)
 
 def predict_passenger_flow(date, line_id, is_workday, weather_data):
@@ -436,10 +457,12 @@ def build_hour_params_from_pred_table(pred_df):
     run_col = "75%运行时间 (min)"
     pwr_col = next((c for c in pred_df.columns if "电量消耗" in c), None)
     carbon_col = next((c for c in pred_df.columns if "碳排放" in c), None)
+    
     if pwr_col is None:
         raise ValueError("统计预测表缺少“电量消耗”列，无法构造求解参数")
     if carbon_col is None:
         raise ValueError("统计预测表缺少“碳排放”列，无法构造求解参数")
+    
     for _, row in pred_df.iterrows():
         hour_str = row["小时"]
         hour = int(hour_str.split(":")[0])
@@ -449,15 +472,18 @@ def build_hour_params_from_pred_table(pred_df):
             runtime_min=parse_float_value(row[run_col], default=45.0),
             carbon_factor=parse_float_value(row[carbon_col], default=0.0),
         )
+    
     missing = sorted(set(range(24)) - set(hour_params))
     if missing:
         raise ValueError(f"统计预测表缺少小时参数：{missing}")
+    
     add_log("✅ 优化求解：已转换为 heuristic_common.HourParam 参数")
     return hour_params
 
 def build_trips_for_solver(raw_trips, hour_params):
     if not raw_trips:
         raise ValueError("班次表为空，无法求解")
+    
     normalized = []
     for item in raw_trips:
         depart_time = str(item.get("depart_time", "")).strip()
@@ -468,13 +494,16 @@ def build_trips_for_solver(raw_trips, hour_params):
         else:
             depart_hour = int(item["depart_hour"])
             depart_minute = int(item["depart_minute"])
+        
         direction = str(item.get("direction", "四惠"))
         if direction == "B" or direction.startswith("老山"):
             origin, dest = "B", "A"
         else:
             origin, dest = "A", "B"
+        
         depart_min = depart_hour * 60 + depart_minute
         normalized.append((origin, dest, depart_min))
+    
     normalized.sort(key=lambda row: (row[2], row[0], row[1]))
     trips = []
     for idx, (origin, dest, depart_min) in enumerate(normalized):
@@ -493,6 +522,7 @@ def build_trips_for_solver(raw_trips, hour_params):
                 label=f"T{idx + 1:03d}_{origin}_to_{dest}_{int(depart_min // 60):02d}{int(depart_min % 60):02d}",
             )
         )
+    
     add_log(f"✅ 优化求解：已转换为 heuristic_common.Trip 班次，共{len(trips)}个")
     return trips
 
@@ -593,7 +623,7 @@ def fitness(solution: Solution) -> float:
     return solution.objective
 
 def optimize_greedy_only(trips, hour_params, config, initial_battery, power_prediction_table):
-    """仅执行贪心算法（与命令行greedy.py完全一致）"""
+    """仅执行贪心算法（与命令行版本完全一致）"""
     add_log("🔄 运行粗略求解（贪心算法）")
     greedy_solution = decode_with_random_keys(trips, hour_params, config, algorithm="greedy")
     trip_df = solution_to_trip_dataframe(greedy_solution)
@@ -716,14 +746,14 @@ def optimize_genetic_full(
     charge_df = solution_to_charge_dataframe(best_solution)
     return best_solution, trip_df, charge_df
 
-# ==================== 侧边栏（完全不变） ====================
+# ==================== 侧边栏 ====================
 st.sidebar.title("🚌 智能公交调度系统")
 st.sidebar.divider()
 page = st.sidebar.radio("功能模块", ["📅 今日调度", "📊 数据管理", "📊 统计预测结果", "⚙️ 优化求解", "📋 排班结果"])
 st.sidebar.divider()
 st.sidebar.info("智能公交调度系统")
 
-# ==================== 优化4：页面懒加载（只渲染当前选中的页面） ====================
+# ==================== 页面内容 ====================
 # -------------------------- 今日调度页面 --------------------------
 if page == "📅 今日调度":
     st.header("🚌 智能公交调度", divider="blue")
@@ -732,7 +762,6 @@ if page == "📅 今日调度":
         dispatch_date = st.date_input("调度日期", datetime.now().date())
         line = st.selectbox("线路/场站", ["1路", "2路", "3路", "4路", "5路"])
         timetable_type = st.selectbox("班次表", ["工作日", "周末", "节假日"])
-        # 新增：手动天气选择（替代失效的API）
         manual_weather = st.selectbox(
             "天气类型",
             ["晴", "多云", "阴", "小雨", "中雨", "大雨", "雪"],
@@ -744,10 +773,8 @@ if page == "📅 今日调度":
         initial_battery = st.number_input("初始电量（%）", 0, 100, 100)
         solve_time = st.number_input("求解时间上限（秒）", 5, 600, 45)
 
-    # 求解方式选择
     st.divider()
     solve_mode = st.selectbox("优化求解方式", ["粗略求解（贪心算法）", "精确求解（遗传算法）"])
-    # 保存当前选择的模式，供其他页面判断
     st.session_state.current_solve_mode = solve_mode
     st.divider()
 
@@ -760,14 +787,7 @@ if page == "📅 今日调度":
                 st.session_state.timetable_data = timetable_df
                 st.success(f"✅ 成功读取 {timetable_type} 班次表，共{len(timetable_df)}条记录")
             else:
-                st.session_state.timetable_data = [
-                    {"depart_time": f"{6+i//2:02d}:{i%2*30:02d}",
-                     "depart_hour": 6+i//2,
-                     "depart_minute": i%2*30,
-                     "direction": "四惠" if i%2==0 else "老山"}
-                    for i in range(10)
-                ]
-                st.warning(f"⚠️ 未找到 {timetable_type} 班次表，使用示例数据")
+                st.error(f"❌ {timetable_error}")
             st.session_state.progress = 24
             st.session_state.current_stage = "班次已加载"
 
@@ -832,7 +852,6 @@ if page == "📅 今日调度":
                     trips = build_trips_for_solver(st.session_state.timetable_data, hour_params)
                     config = make_solver_config(vehicle_count)
 
-                    # 根据选择执行对应算法
                     if solve_mode == "粗略求解（贪心算法）":
                         status_text.text("正在运行粗略求解（贪心算法）...")
                         progress_bar.progress(10)
@@ -849,7 +868,6 @@ if page == "📅 今日调度":
                         status_text.empty()
                         st.success("✅ 粗略求解完成！")
                     else:
-                        # 精确求解：先跑贪心基准，再在网页时间预算内做遗传改进
                         status_text.text("正在运行贪心算法（基准解）...")
                         progress_bar.progress(5)
                         greedy_sol, greedy_df, greedy_charge_df = optimize_greedy_only(trips, hour_params, config, initial_battery, st.session_state.power_prediction_table)
@@ -894,7 +912,6 @@ if page == "📅 今日调度":
                 if st.session_state.greedy_charge_data is not None:
                     csv_greedy_charge = st.session_state.greedy_charge_data.to_csv(index=False, encoding='utf-8-sig')
                     st.download_button("📥 下载粗略解充电表", csv_greedy_charge, f"公交充电表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
-                # 仅遗传模式才导出遗传相关文件
                 if st.session_state.current_solve_mode == "精确求解（遗传算法）" and st.session_state.schedule_data is not None:
                     csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
                     st.download_button("📥 下载精确解排班表", csv_genetic, f"公交排班表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
@@ -934,35 +951,37 @@ elif page == "📊 数据管理":
     try:
         power_df, power_error = load_power_data()
         if power_df is not None:
-            st.success("✅ 成功加载 data/电量消耗.csv")
+            st.success("✅ 成功从你的GitHub仓库加载 data/电量消耗.csv")
             st.dataframe(power_df, use_container_width=True)
         else:
             st.error(f"❌ 电量消耗数据加载失败：{power_error}")
-            st.info("CSV格式要求：时段,天气类型,春季,夏季,秋季,冬季")
     except Exception as e:
         st.error(f"❌ 加载失败：{str(e)}")
+    
     st.divider()
     st.subheader("运行时间75%分位数数据状态")
     try:
         runtime_df, runtime_error = load_runtime_data()
         if runtime_df is not None:
-            st.success("✅ 成功加载 data/运行时间75%分位数.csv")
+            st.success("✅ 成功从你的GitHub仓库加载 data/运行时间75%分位数.csv")
             st.dataframe(runtime_df, use_container_width=True)
         else:
             st.error(f"❌ 运行时间数据加载失败：{runtime_error}")
     except Exception as e:
         st.error(f"❌ 加载失败：{str(e)}")
+    
     st.divider()
     st.subheader("碳排放数据状态")
     try:
         carbon_df, carbon_error = load_carbon_data()
         if carbon_df is not None:
-            st.success("✅ 成功加载 data/碳排放.csv")
+            st.success("✅ 成功从你的GitHub仓库加载 data/碳排放.csv")
             st.dataframe(carbon_df, use_container_width=True)
         else:
             st.error(f"❌ 碳排放数据加载失败：{carbon_error}")
     except Exception as e:
         st.error(f"❌ 加载失败：{str(e)}")
+    
     st.divider()
     st.subheader("班次表数据状态")
     try:
@@ -990,14 +1009,13 @@ elif page == "📊 统计预测结果":
         st.dataframe(st.session_state.power_prediction_table, use_container_width=True, height=800)
         csv_data = st.session_state.power_prediction_table.to_csv(index=False, encoding='utf-8-sig')
         st.download_button("📥 下载24小时逐时统计预测结果表", csv_data, f"24小时逐时统计预测结果_{current_date.strftime('%Y%m%d')}.csv")
-        st.success("✅ 所有数据来自上传CSV文件，匹配当日天气和季节")
+        st.success("✅ 所有数据来自你的GitHub仓库，匹配当日天气和季节")
 
 # -------------------------- 优化求解页面 --------------------------
 elif page == "⚙️ 优化求解":
     st.header("⚙️ 优化求解", divider="blue")
     solve_mode = st.session_state.current_solve_mode
 
-    # 粗略求解：只展示贪心结果
     if solve_mode == "粗略求解（贪心算法）":
         if st.session_state.greedy_solution:
             st.subheader("📌 粗略解（贪心算法）")
@@ -1009,7 +1027,6 @@ elif page == "⚙️ 优化求解":
         else:
             st.info("请先在「今日调度」页面点击「开始优化求解」")
 
-    # 精确求解：同时展示贪心 + 遗传
     elif solve_mode == "精确求解（遗传算法）":
         if st.session_state.greedy_solution:
             st.subheader("📌 基准解（贪心算法）")
@@ -1045,7 +1062,6 @@ elif page == "📋 排班结果":
     st.header("📋 排班结果", divider="blue")
     solve_mode = st.session_state.current_solve_mode
 
-    # 粗略求解：仅展示贪心排班表
     if solve_mode == "粗略求解（贪心算法）":
         if st.session_state.greedy_schedule_data is not None:
             st.subheader("📌 粗略解（贪心算法）排班表")
@@ -1061,7 +1077,6 @@ elif page == "📋 排班结果":
         else:
             st.info("请先完成优化求解")
 
-    # 精确求解：同时展示两个排班表
     elif solve_mode == "精确求解（遗传算法）":
         if st.session_state.greedy_schedule_data is not None:
             st.subheader("📌 基准解（贪心算法）排班表")
