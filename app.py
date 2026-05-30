@@ -38,7 +38,7 @@ try:
 except ImportError as exc:
     SOLVER_IMPORT_ERROR = exc
 
-# ==================== 全局页面配置（删除所有图标） ====================
+# ==================== 全局页面配置（完全保留） ====================
 st.set_page_config(
     page_title="智能公交调度系统",
     page_icon=None,
@@ -52,7 +52,7 @@ if SOLVER_IMPORT_ERROR is not None:
     st.code("\n".join(str(path) for path in SOLVER_SEARCH_DIRS), language="text")
     st.stop()
 
-# ==================== 全局页面样式（进度条改为白底白边+蓝色进度） ====================
+# ==================== 全局页面样式（仅修改进度条部分） ====================
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
@@ -82,7 +82,7 @@ h1, h2, h3 {
     color: #2c3e50;
     font-weight: 600;
 }
-/* 进度条：白底白边+蓝色进度 */
+/* 进度条：纯白色底色+浅灰色边框+蓝色进度（已修正） */
 .stProgress {
     display: flex;
     flex-direction: column;
@@ -91,7 +91,6 @@ h1, h2, h3 {
 .stProgress > div:first-child {
     position: static !important;
     background: transparent !important;
-    background-color: transparent !important;
     height: auto !important;
     color: #2c3e50 !important;
     font-size: 16px !important;
@@ -101,16 +100,20 @@ h1, h2, h3 {
     border: none !important;
     box-shadow: none !important;
 }
-.stProgress > div:last-child {
+/* 进度条背景容器：纯白色 */
+.stProgress > div:nth-child(2) {
     height: 12px !important;
     margin: 0 !important;
-    background-color: #ffffff !important; /* 白底 */
-    border: 1px solid #dee2e6 !important; /* 白边 */
+    background-color: #ffffff !important;
+    border: 1px solid #dee2e6 !important;
     border-radius: 10px !important;
+    overflow: hidden !important;
 }
-.stProgress > div:last-child > div {
-    background-color: #1f77b4 !important; /* 蓝色进度 */
+/* 进度条填充部分：蓝色 */
+.stProgress > div:nth-child(2) > div {
+    background-color: #1f77b4 !important;
     border-radius: 9px !important;
+    height: 100% !important;
 }
 .stMetric [data-testid="stMetricValue"] {
     font-size: 1.7rem !important;
@@ -915,7 +918,7 @@ def optimize_genetic_full(
     charge_df = solution_to_charge_dataframe(best_solution)
     return best_solution, trip_df, charge_df
 
-# ==================== 侧边栏 & 页面布局（删除所有图标） ====================
+# ==================== 侧边栏 & 页面布局（完全保留原逻辑） ====================
 st.sidebar.title("智能公交调度系统")
 st.sidebar.divider()
 page = st.sidebar.radio("功能模块", ["今日调度", "数据管理", "统计预测结果", "优化求解", "排班结果"])
@@ -1235,6 +1238,4 @@ elif page == "优化求解":
             if st.session_state.ga_history:
                 st.subheader("每代迭代明细")
                 hist_df = pd.DataFrame(st.session_state.ga_history)
-                st.dataframe(hist_df, use_container_width=True)
-        else:
-            st
+                st.data
