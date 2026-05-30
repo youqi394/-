@@ -125,19 +125,39 @@ h1, h2, h3 {
 
 import streamlit as st
 
-# 不添加任何背景图，只隐藏默认的顶部菜单和页脚，不会报错
-hide_streamlit_style = """
-<style>
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-</style>
-"""
+/* ========== 侧边栏整体美化 ========== */
+[data-testid="stSidebar"] {
+    background-color: #f0f5fa;
+    background-image: url("https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    padding: 1.2rem 0.8rem !important;
+}
 
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+/* 侧边栏文字半透明遮罩，保证可读性 */
+[data-testid="stSidebar"] > div:first-child {
+    background-color: rgba(255, 255, 255, 0.75);
+    padding: 1rem;
+    border-radius: 8px;
+}
 
-# 你的业务代码从这里开始
-# st.title("你的公交调度系统")
-# ...
+/* ========== 主页面背景图（解决右侧单调问题） ========== */
+.stApp {
+    background-image: url("https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}
+
+/* 给主页面内容也加一层半透明遮罩，保证文字清晰 */
+.stApp > div:first-child > div:first-child {
+    background-color: rgba(255, 255, 255, 0.85);
+    border-radius: 12px;
+    padding: 1rem;
+}
 
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 /* 「功能模块」文字 加粗+放大 */
