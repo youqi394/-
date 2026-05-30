@@ -177,22 +177,26 @@ h1, h2, h3 {
     padding: 16px;
 }
 
-/* 侧边栏文字、单选按钮美化 */
-/* 侧边栏文字、单选按钮美化 */
+/* ========== 【修改开始】全新侧边栏单选样式（仅此处改动） ========== */
 [data-testid="stSidebar"] p:has(label) {
     font-size: 1.1rem !important;
     font-weight: 700 !important;
     color: #2c3e50 !important;
     margin: 1rem 0 0.6rem 0 !important;
 }
-/* 隐藏原生圆形单选框 */
-[data-testid="stSidebar"] .stRadio input {
+/* 强制隐藏原生圆形单选按钮 */
+[data-testid="stSidebar"] .stRadio [role="radio"] {
     display: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    position: absolute !important;
 }
 [data-testid="stSidebar"] .stRadio > div {
     gap: 0.5rem !important;
+    display: flex !important;
+    flex-direction: column !important;
 }
-/* 单选选项整体样式 - 圆角矩形 */
+/* 单选选项整体样式 */
 [data-testid="stSidebar"] .stRadio label {
     font-size: 1rem !important;
     font-weight: 500 !important;
@@ -201,11 +205,13 @@ h1, h2, h3 {
     transition: all 0.25s ease !important;
     margin: 0 !important;
     cursor: pointer !important;
-    /* 默认：纯黑色字体 + 透明背景 */
+    width: 100% !important;
+    box-sizing: border-box !important;
+    /* 默认：黑色字体 + 透明背景 */
     color: #000000 !important;
     background: transparent !important;
 }
-/* 鼠标悬浮浅底色 */
+/* 鼠标悬浮效果 */
 [data-testid="stSidebar"] .stRadio label:hover {
     background-color: #e4edf5 !important;
 }
@@ -215,6 +221,7 @@ h1, h2, h3 {
     color: #ffffff !important;
     font-weight: 600 !important;
 }
+/* ========== 【修改结束】 ========== */
 </style>
 """
 
