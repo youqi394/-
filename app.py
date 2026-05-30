@@ -54,10 +54,12 @@ if SOLVER_IMPORT_ERROR is not None:
     st.stop()
 
 # ==================== 全局页面样式（仅彻底修正进度条部分） ====================
+# ==================== 全局页面样式（修复CSS错乱 + 侧边栏/主页面双背景生效） ====================
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
+
 .stButton>button {
     height: 50px;
     font-size: 16px;
@@ -83,6 +85,7 @@ h1, h2, h3 {
     color: #2c3e50;
     font-weight: 600;
 }
+
 /* 进度条样式 */
 .stProgress {
     display: flex;
@@ -123,9 +126,7 @@ h1, h2, h3 {
     overflow: visible !important;
 }
 
-import streamlit as st
-
-/* ========== 侧边栏整体美化 ========== */
+/* 侧边栏背景 + 样式 */
 [data-testid="stSidebar"] {
     background-color: #f0f5fa;
     background-image: url("https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
@@ -133,17 +134,15 @@ import streamlit as st
     background-position: center;
     background-repeat: no-repeat;
     background-attachment: fixed;
-    padding: 1.2rem 0.8rem !important;
+    padding: 19px 13px !important;
 }
-
-/* 侧边栏文字半透明遮罩，保证可读性 */
 [data-testid="stSidebar"] > div:first-child {
     background-color: rgba(255, 255, 255, 0.75);
-    padding: 1rem;
+    padding: 16px;
     border-radius: 8px;
 }
 
-/* ========== 主页面背景图（解决右侧单调问题） ========== */
+/* 主页面背景 */
 .stApp {
     background-image: url("https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80");
     background-size: cover;
@@ -151,24 +150,19 @@ import streamlit as st
     background-repeat: no-repeat;
     background-attachment: fixed;
 }
-
-/* 给主页面内容也加一层半透明遮罩，保证文字清晰 */
 .stApp > div:first-child > div:first-child {
     background-color: rgba(255, 255, 255, 0.85);
     border-radius: 12px;
-    padding: 1rem;
+    padding: 16px;
 }
 
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-/* 「功能模块」文字 加粗+放大 */
+/* 侧边栏文字、单选按钮美化 */
 [data-testid="stSidebar"] p:has(label) {
     font-size: 1.1rem !important;
     font-weight: 700 !important;
     color: #2c3e50 !important;
     margin: 1rem 0 0.6rem 0 !important;
 }
-
-/* 单选按钮选项（今日调度/数据管理等）美化 */
 [data-testid="stSidebar"] .stRadio > div {
     gap: 0.5rem !important;
 }
@@ -180,24 +174,17 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
     transition: all 0.25s ease !important;
     margin: 0 !important;
 }
-
-/* 未选中选项样式 */
 [data-testid="stSidebar"] .stRadio label:hover {
     background-color: #e4edf5 !important;
 }
-
-/* 选中的选项样式 */
 [data-testid="stSidebar"] .stRadio label[data-checked="true"] {
     background-color: #1f77b4 !important;
     color: #ffffff !important;
     font-weight: 600 !important;
 }
-
-
-
-
 </style>
 """
+
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 # ==================== 会话状态初始化（完全保留原逻辑） ====================
 if 'progress' not in st.session_state:
