@@ -1098,25 +1098,21 @@ if page == "今日调度":
         dispatch_date = st.date_input("调度日期", datetime.now().date())
         line = st.selectbox("线路/场站", ["北京1路", "北京2路", "雄安301路", "雄安302路", "雄安319路"])
         timetable_type = st.selectbox("班次表", ["工作日", "节假日"])
-    with col2:
+        with col2:
         vehicle_count = st.number_input("当日车辆数", 1, 120, 87)
         initial_battery = st.number_input("初始电量（%）", 0, 100, 100)
         solve_time = st.number_input("求解时间上限（秒）", 5, 600, 45)
 
     # 求解方式选择
-        # 求解方式选择
-       # 求解方式选择
     st.divider()
 
-    # 增强版：显示警告 + 自动清除
+    # 新增：显示表单验证警告信息
     if st.session_state.form_warning:
-        # ↓↓↓ 自动清除逻辑就加在这里 ↓↓↓
-        # 当用户选择了所有必填参数时，警告自动消失
+        # 自动清除：如果用户已经选择了所有参数，警告立即消失
         if line and timetable_type and solve_time:
             st.session_state.form_warning = ""
         else:
             st.error(st.session_state.form_warning)
-        # ↑↑↑ 自动清除逻辑就加在这里 ↑↑↑
 
     solve_mode = st.selectbox("优化求解方式", ["粗略求解（贪心算法）", "精确求解（遗传算法）"])
     st.session_state.current_solve_mode = solve_mode
