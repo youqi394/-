@@ -129,14 +129,7 @@ h1, h2, h3 {
     padding: 1.2rem 0.8rem !important;
 }
 
-/* 侧边栏标题：智能公交调度系统 */
-[data-testid="stSidebar"] h1 {
-    font-size: 1.4rem !important;
-    font-weight: 700 !important;
-    color: #1f77b4 !important;
-    text-align: center;
-    margin-bottom: 1rem !important;
-}
+
 
 /* 「功能模块」文字 加粗+放大 */
 [data-testid="stSidebar"] p:has(label) {
