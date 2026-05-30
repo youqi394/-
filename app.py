@@ -136,18 +136,18 @@ footer {visibility: hidden;}
     background-position: center;
     background-repeat: no-repeat;
     background-attachment: fixed;
-    /* 改用像素值，彻底避免Python解析错误 */
+   
     padding: 19px 13px !important;
 }
 
-/* 侧边栏文字半透明遮罩，保证黑字清晰 */
+
 [data-testid="stSidebar"] > div:first-child {
     background-color: rgba(255, 255, 255, 0.9);
     padding: 16px;
     border-radius: 8px;
 }
 
-/* ========== 右侧主页面背景（蓝色公交主题） ========== */
+
 .stApp {
     background-image: url("https://images.unsplash.com/photo-1564612441657-108762776959?auto=format&fit=crop&w=1600&q=80");
     background-size: cover;
@@ -156,7 +156,7 @@ footer {visibility: hidden;}
     background-attachment: fixed;
 }
 
-/* 主页面内容半透明遮罩，保证文字/表格清晰 */
+
 .stApp > div:first-child > div:first-child {
     background-color: rgba(255, 255, 255, 0.9);
     border-radius: 12px;
