@@ -112,7 +112,7 @@ h1, h2, h3 {
 }
 /* 进度条填充部分：纯蓝色 */
 .stProgress [role="progressbar"] > div {
-    background-color: #1f77b4 !important;
+    background-color: #ffffff !important;
     border-radius: 9px !important;
     height: 100% !important;
     transition: width 0.3s ease !important;
