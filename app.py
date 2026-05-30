@@ -83,7 +83,7 @@ h1, h2, h3 {
     color: #2c3e50;
     font-weight: 600;
 }
-/* 进度条：纯白色底色+浅灰色细边框+纯蓝色进度（已彻底修正） */
+/* 进度条样式 */
 .stProgress {
     display: flex;
     flex-direction: column;
@@ -101,7 +101,6 @@ h1, h2, h3 {
     border: none !important;
     box-shadow: none !important;
 }
-/* 进度条容器：纯白色底色+浅灰色细边框 */
 .stProgress [role="progressbar"] {
     height: 12px !important;
     margin: 0 !important;
@@ -111,7 +110,6 @@ h1, h2, h3 {
     overflow: hidden !important;
     box-shadow: none !important;
 }
-/* 进度条填充部分：纯蓝色 */
 .stProgress [role="progressbar"] > div {
     background-color: #ffffff !important;
     border-radius: 9px !important;
@@ -124,13 +122,69 @@ h1, h2, h3 {
     white-space: nowrap !important;
     overflow: visible !important;
 }
+
+/* ========== 侧边栏整体美化 ========== */
 [data-testid="stSidebar"] {
     background-color: #f0f5fa;
+    padding: 1.2rem 0.8rem !important;
+}
+
+/* 侧边栏标题：智能公交调度系统 */
+[data-testid="stSidebar"] h1 {
+    font-size: 1.4rem !important;
+    font-weight: 700 !important;
+    color: #1f77b4 !important;
+    text-align: center;
+    margin-bottom: 1rem !important;
+}
+
+/* 「功能模块」文字 加粗+放大 */
+[data-testid="stSidebar"] p:has(label) {
+    font-size: 1.1rem !important;
+    font-weight: 700 !important;
+    color: #2c3e50 !important;
+    margin: 1rem 0 0.6rem 0 !important;
+}
+
+/* 单选按钮选项（今日调度/数据管理等）美化 */
+[data-testid="stSidebar"] .stRadio > div {
+    gap: 0.5rem !important;
+}
+[data-testid="stSidebar"] .stRadio label {
+    font-size: 1rem !important;
+    font-weight: 500 !important;
+    padding: 0.6rem 0.8rem !important;
+    border-radius: 8px !important;
+    transition: all 0.25s ease !important;
+    margin: 0 !important;
+}
+
+/* 未选中选项样式 */
+[data-testid="stSidebar"] .stRadio label:hover {
+    background-color: #e4edf5 !important;
+}
+
+/* 选中的选项样式 */
+[data-testid="stSidebar"] .stRadio label[data-checked="true"] {
+    background-color: #1f77b4 !important;
+    color: #ffffff !important;
+    font-weight: 600 !important;
+}
+
+/* 侧边栏分割线 */
+[data-testid="stSidebar"] hr {
+    margin: 1rem 0 !important;
+    border-color: #d8e2ec !important;
+}
+
+/* 侧边栏底部提示文字 */
+[data-testid="stSidebar"] .stInfo {
+    border-radius: 8px !important;
+    background-color: #e4edf5 !important;
 }
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-
 # ==================== 会话状态初始化（完全保留原逻辑） ====================
 if 'progress' not in st.session_state:
     st.session_state.progress = 0
