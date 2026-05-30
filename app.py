@@ -53,10 +53,7 @@ if SOLVER_IMPORT_ERROR is not None:
     st.code("\n".join(str(path) for path in SOLVER_SEARCH_DIRS), language="text")
     st.stop()
 
-# ==================== 全局页面样式（仅彻底修正进度条部分） ====================
-# ==================== 全局页面样式（修复CSS错乱 + 侧边栏/主页面双背景生效） ====================
-# ==================== 全局页面样式（修复白条 + 双背景生效） ====================
-# ==================== 全局页面样式（无白条 + 侧边栏正常显示 + 无非法字符） ====================
+# ==================== 全局页面样式（修复图片加载、背景遮挡、无非法字符） ====================
 hide_streamlit_style = """
 <style>
 /* 隐藏默认菜单和页脚 */
@@ -144,10 +141,9 @@ h1, h2, h3 {
     overflow: visible !important;
 }
 
-/* 侧边栏背景 + 样式 */
+/* 侧边栏背景 + 样式（移除遮挡底色，使用国内稳定图片） */
 [data-testid="stSidebar"] {
-    background-color: #f0f5fa;
-    background-image: url("https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
+    background-image: url("https://img0.baidu.com/it/u=1231392229,3829112399&fm=253&fmt=auto&app=138&f=JPEG?w=800&h=500");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -160,9 +156,9 @@ h1, h2, h3 {
     border-radius: 8px;
 }
 
-/* 主页面背景 */
+/* 主页面背景（国内稳定科技风图片） */
 .stApp {
-    background-image: url("https://images.unsplash.com/photo-1519999482648-250cccdee182?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
+    background-image: url("https://img1.baidu.com/it/u=2646690913,1561802417&fm=253&fmt=auto&app=138&f=JPEG?w=1200&h=800");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -1032,10 +1028,7 @@ def optimize_genetic_full(
 
 
 # ==================== 侧边栏 & 页面布局（完全保留原逻辑） ====================
-# ==================== 侧边栏 & 页面布局（完全保留原逻辑） ====================
 st.sidebar.title("智能公交调度系统")
-
-
 
 st.sidebar.divider()
 page = st.sidebar.radio("功能模块", ["今日调度", "数据管理", "统计预测结果", "优化求解", "排班结果"])
@@ -1097,316 +1090,4 @@ if page == "今日调度":
                 st.warning("请先读取天气")
             else:
                 st.info("统计预测中...")
-                is_workday = 1 if timetable_type == "工作日" else 0
-                hours, preds = predict_passenger_flow(dispatch_date, line, is_workday, st.session_state.weather_data)
-                power_table = statistical_prediction(st.session_state.weather_data)
-                st.session_state.predictions = preds
-                st.session_state.prediction_hours = hours
-                st.session_state.power_prediction_table = power_table
-                st.session_state.progress = 60
-                st.session_state.current_stage = "统计预测完成"
-                st.success("统计预测完成！")
-
-    with btn4:
-        if st.button("开始优化求解"):
-            try:
-                if st.session_state.timetable_data is None:
-                    timetable_df, timetable_error = load_timetable_data(timetable_type)
-                    if timetable_df is None:
-                        raise RuntimeError(f"班次表读取失败：{timetable_error}")
-                    st.session_state.timetable_data = timetable_df
-                    add_log(f"自动读取 {timetable_type} 班次表，共{len(timetable_df)}条记录")
-                if not st.session_state.weather_data:
-                    weather_info, err = get_weather_forecast(dispatch_date)
-                    st.session_state.weather_data = weather_info
-                    add_log(
-                        f"自动读取天气：{weather_info['weather']} {weather_info['temp_min']}~{weather_info['temp_max']}℃")
-                predictions_ok = st.session_state.predictions is not None and len(st.session_state.predictions) > 0
-                table_ok = st.session_state.power_prediction_table is not None and not st.session_state.power_prediction_table.empty
-                if not predictions_ok or not table_ok:
-                    is_workday = 1 if timetable_type == "工作日" else 0
-                    hours, preds = predict_passenger_flow(dispatch_date, line, is_workday,
-                                                          st.session_state.weather_data)
-                    power_table = statistical_prediction(st.session_state.weather_data)
-                    st.session_state.predictions = preds
-                    st.session_state.prediction_hours = hours
-                    st.session_state.power_prediction_table = power_table
-                    add_log("自动完成统计预测")
-            except Exception as e:
-                st.session_state.current_stage = "前置数据失败"
-                add_log(f"前置数据失败：{e}")
-                st.error(f"前置数据失败：{e}")
-            else:
-                st.info("求解中...")
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-
-                try:
-                    hour_params = build_hour_params_from_pred_table(st.session_state.power_prediction_table)
-                    trips = build_trips_for_solver(st.session_state.timetable_data, hour_params)
-                    config = make_solver_config(vehicle_count)
-
-                    # 根据选择执行对应算法
-                    if solve_mode == "粗略求解（贪心算法）":
-                        status_text.text("正在运行粗略求解（贪心算法）...")
-                        progress_bar.progress(10)
-                        greedy_sol, greedy_df, greedy_charge_df = optimize_greedy_only(trips, hour_params, config,
-                                                                                       initial_battery,
-                                                                                       st.session_state.power_prediction_table)
-                        st.session_state.greedy_solution = greedy_sol
-                        st.session_state.greedy_schedule_data = greedy_df
-                        st.session_state.greedy_charge_data = greedy_charge_df
-                        st.session_state.greedy_objective = greedy_sol.objective
-                        st.session_state.optimization_result = None
-                        st.session_state.schedule_data = None
-                        st.session_state.charge_data = None
-                        st.session_state.current_objective = greedy_sol.objective
-                        progress_bar.progress(100)
-                        status_text.empty()
-                        st.success("粗略求解完成！")
-                    else:
-                        # 精确求解：先跑贪心基准，再在网页时间预算内做遗传改进
-                        status_text.text("正在运行贪心算法（基准解）...")
-                        progress_bar.progress(5)
-                        greedy_sol, greedy_df, greedy_charge_df = optimize_greedy_only(trips, hour_params, config,
-                                                                                       initial_battery,
-                                                                                       st.session_state.power_prediction_table)
-                        st.session_state.greedy_solution = greedy_sol
-                        st.session_state.greedy_schedule_data = greedy_df
-                        st.session_state.greedy_charge_data = greedy_charge_df
-                        st.session_state.greedy_objective = greedy_sol.objective
-
-                        status_text.text("正在运行遗传算法（精确解）...")
-                        progress_bar.progress(10)
-                        gen_sol, gen_df, gen_charge_df = optimize_genetic_full(
-                            trips,
-                            hour_params,
-                            config,
-                            initial_battery,
-                            st.session_state.power_prediction_table,
-                            max_runtime_sec=solve_time,
-                            progress_bar=progress_bar,
-                            status_text=status_text,
-                        )
-                        st.session_state.optimization_result = gen_sol
-                        st.session_state.schedule_data = gen_df
-                        st.session_state.charge_data = gen_charge_df
-                        progress_bar.progress(100)
-                        status_text.empty()
-                        st.success("精确求解完成！")
-
-                    st.session_state.progress = 90
-                    st.session_state.current_stage = "优化求解完成"
-                except Exception as e:
-                    status_text.empty()
-                    st.session_state.current_stage = "求解失败"
-                    add_log(f"求解失败：{e}")
-                    st.error(f"求解失败：{e}")
-
-    with btn5:
-        if st.button("导出排班结果"):
-            if st.session_state.greedy_schedule_data is not None:
-                st.success("数据已准备完成，请切换到【排班结果】页面进行下载！")
-                st.session_state.progress = 100
-                st.session_state.current_stage = "全部完成"
-            else:
-                st.warning("请先完成求解")
-
-    st.divider()
-    st.progress(st.session_state.progress / 100, text=f"进度 {st.session_state.progress}%")
-    st.divider()
-    # 把指标区域用折叠组件包起来，默认收起
-    with st.expander("求解状态指标", expanded=False):
-        row1_col1, row1_col2, row1_col3 = st.columns(3, gap="medium")
-        with row1_col1:
-            st.metric("当前阶段", st.session_state.current_stage)
-        with row1_col2:
-            st.metric("已用时间",
-                      f"{int(time.time() - st.session_state.start_time)}s" if st.session_state.start_time else "0s")
-        with row1_col3:
-            st.metric("预计剩余",
-                      f"{int((100 - st.session_state.progress) * 0.5)}s" if st.session_state.progress < 100 else "0s")
-        st.divider()
-        row2_col1, row2_col2 = st.columns(2, gap="medium")
-        with row2_col1:
-            st.metric("当前收敛Gap", f"{st.session_state.current_gap:.4f}")
-        with row2_col2:
-            st.metric("目标值", f"{st.session_state.current_objective:.2f}")
-    st.divider()
-
-# -------------------------- 数据管理页面 --------------------------
-elif page == "数据管理":
-    st.header("数据管理", divider="blue")
-    st.subheader("电量消耗数据状态")
-    try:
-        power_df, power_error = load_power_data()
-        if power_df is not None:
-            st.success("成功加载 data/电量消耗.csv")
-            st.dataframe(power_df, use_container_width=True)
-        else:
-            st.error(f"电量消耗数据加载失败：{power_error}")
-            st.info("CSV格式要求：时段,天气类型,春季,夏季,秋季,冬季")
-    except Exception as e:
-        st.error(f"加载失败：{str(e)}")
-    st.divider()
-    st.subheader("运行时间75%分位数数据状态")
-    try:
-        runtime_df, runtime_error = load_runtime_data()
-        if runtime_df is not None:
-            st.success("成功加载 data/运行时间75%分位数.csv")
-            st.dataframe(runtime_df, use_container_width=True)
-        else:
-            st.error(f"运行时间数据加载失败：{runtime_error}")
-    except Exception as e:
-        st.error(f"加载失败：{str(e)}")
-    st.divider()
-    st.subheader("碳排放数据状态")
-    try:
-        carbon_df, carbon_error = load_carbon_data()
-        if carbon_df is not None:
-            st.success("成功加载 data/碳排放.csv")
-            st.dataframe(carbon_df, use_container_width=True)
-        else:
-            st.error(f"碳排放数据加载失败：{carbon_error}")
-    except Exception as e:
-        st.error(f"加载失败：{str(e)}")
-    st.divider()
-    st.subheader("班次表数据状态")
-    try:
-        if st.session_state.timetable_data is not None:
-            st.success("已加载班次表数据（保留方向信息）")
-            df = pd.DataFrame(st.session_state.timetable_data)
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("请在「今日调度」页面点击「读取班次表」加载数据")
-    except Exception as e:
-        st.error(f"加载失败：{str(e)}")
-
-# -------------------------- 统计预测结果页面 --------------------------
-elif page == "统计预测结果":
-    st.header("24小时逐时统计预测结果", divider="blue")
-    if st.session_state.power_prediction_table is None or st.session_state.power_prediction_table.empty:
-        st.info("请先在「今日调度」页面点击「运行统计预测」")
-    else:
-        current_date = st.session_state.weather_data['date'] if st.session_state.weather_data else datetime.now().date()
-        power_season = get_power_season(current_date)
-        carbon_season = get_carbon_season(current_date)
-        season_name_map = {"summer": "夏季", "winter": "冬季", "annual": "全年"}
-        st.subheader(
-            f"调度日期：{current_date.strftime('%Y-%m-%d')} | 当日天气：{st.session_state.weather_data['weather'] if st.session_state.weather_data else '无'}")
-        st.subheader(f"电量季节：{power_season} | 碳排放季节：{season_name_map[carbon_season]}")
-        st.dataframe(st.session_state.power_prediction_table, use_container_width=True, height=800)
-        csv_data = st.session_state.power_prediction_table.to_csv(index=False, encoding='utf-8-sig')
-        st.download_button("下载24小时逐时统计预测结果表", csv_data,
-                           f"24小时逐时统计预测结果_{current_date.strftime('%Y%m%d')}.csv")
-        st.success("所有数据来自上传CSV文件，匹配当日天气和季节")
-
-# -------------------------- 优化求解页面 --------------------------
-elif page == "优化求解":
-    st.header("优化求解", divider="blue")
-    solve_mode = st.session_state.current_solve_mode
-
-    # 粗略求解：只展示贪心结果
-    if solve_mode == "粗略求解（贪心算法）":
-        if st.session_state.greedy_solution:
-            st.subheader("粗略解（贪心算法）")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("最优目标值", f"{st.session_state.greedy_objective:.2f}")
-            with col2:
-                st.metric("使用车辆数", st.session_state.greedy_solution.vehicles_used)
-        else:
-            st.info("请先在「今日调度」页面点击「开始优化求解」")
-
-    # 精确求解：同时展示贪心 + 遗传
-    elif solve_mode == "精确求解（遗传算法）":
-        if st.session_state.greedy_solution:
-            st.subheader("基准解（贪心算法）")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("最优目标值", f"{st.session_state.greedy_objective:.2f}")
-            with col2:
-                st.metric("使用车辆数", st.session_state.greedy_solution.vehicles_used)
-            st.divider()
-
-        if st.session_state.optimization_result:
-            st.subheader("精确解（遗传算法）")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("最优目标值", f"{st.session_state.current_objective:.2f}")
-            with col2:
-                st.metric("使用车辆数", st.session_state.optimization_result.vehicles_used)
-            with col3:
-                st.metric("运行耗时(s)", f"{st.session_state.optimization_result.runtime_sec:.2f}")
-            if st.session_state.convergence_data:
-                st.subheader("遗传算法收敛曲线")
-                conv_df = pd.DataFrame(st.session_state.convergence_data, columns=["代次", "目标值"])
-                st.line_chart(conv_df.set_index("代次"))
-            if st.session_state.ga_history:
-                st.subheader("每代迭代明细")
-                hist_df = pd.DataFrame(st.session_state.ga_history)
-                st.dataframe(hist_df, use_container_width=True)
-                # -------------------------- 排班结果页面（新增完整逻辑） --------------------------
-elif page == "排班结果":
-    st.header("排班结果", divider="blue")
-    solve_mode = st.session_state.current_solve_mode
-    dispatch_date = st.session_state.weather_data["date"] if st.session_state.weather_data else datetime.now().date()
-
-    # 展示粗略解（贪心）排班 & 充电表
-    if st.session_state.greedy_schedule_data is not None:
-        st.subheader("粗略解（贪心算法）- 排班明细")
-        st.dataframe(st.session_state.greedy_schedule_data, use_container_width=True)
-        st.divider()
-
-        st.subheader("粗略解（贪心算法）- 充电记录")
-        if st.session_state.greedy_charge_data is not None:
-            st.dataframe(st.session_state.greedy_charge_data, use_container_width=True)
-        st.divider()
-
-        # ========== 下载按钮区域 ==========
-        st.subheader("文件下载")
-        csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
-        st.download_button("下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
-
-        if st.session_state.greedy_charge_data is not None:
-            csv_greedy_charge = st.session_state.greedy_charge_data.to_csv(index=False, encoding='utf-8-sig')
-            st.download_button("下载粗略解充电表", csv_greedy_charge,
-                               f"公交充电表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
-        st.divider()
-        # =================================
-
-    else:
-        st.info("暂无粗略解数据，请先在【今日调度】完成求解")
-
-    # 精确解（遗传）仅在对应求解模式下展示
-    if solve_mode == "精确求解（遗传算法）":
-        if st.session_state.schedule_data is not None:
-            st.subheader("精确解（遗传算法）- 排班明细")
-            st.dataframe(st.session_state.schedule_data, use_container_width=True)
-            st.divider()
-
-            st.subheader("精确解（遗传算法）- 充电记录")
-            if st.session_state.charge_data is not None:
-                st.dataframe(st.session_state.charge_data, use_container_width=True)
-            st.divider()
-
-            # ========== 遗传算法文件下载 ==========
-            st.subheader("文件下载")
-            csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
-            st.download_button("下载精确解排班表", csv_genetic,
-                               f"公交排班表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
-
-            if st.session_state.charge_data is not None:
-                csv_genetic_charge = st.session_state.charge_data.to_csv(index=False, encoding='utf-8-sig')
-                st.download_button("下载精确解充电表", csv_genetic_charge,
-                                   f"公交充电表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
-
-            if st.session_state.ga_history:
-                hist_df = pd.DataFrame(st.session_state.ga_history)
-                csv_hist = hist_df.to_csv(index=False, encoding="utf-8-sig")
-                st.download_button("下载遗传迭代历史", csv_hist, f"GA_历史记录_{dispatch_date.strftime('%Y%m%d')}.csv")
-            # =================================
-
-        else:
-            if st.session_state.greedy_schedule_data is not None:
-                st.info("暂无精确解数据")
+                is_workday = 
