@@ -1122,32 +1122,33 @@ if page == "今日调度":
     st.session_state.current_solve_mode = solve_mode
     st.divider()
 
-    btn1, btn2, btn3, btn4, btn5 = st.columns(5, gap="small")
-  with btn1:
-    if st.button("读取班次表"):
-        # 新增：表单验证逻辑
-        if not line or not timetable_type or not solve_time:
-            st.session_state.form_warning = "⚠️ 您还未选择班次表、线路、求解时间上限等参数，请先选择后再读取班次表"
-        else:
-            # 清除警告信息
-            st.session_state.form_warning = ""
-            st.session_state.start_time = time.time()
-            timetable_df, timetable_error = load_timetable_data(timetable_type)
-            if timetable_df is not None:
-                st.session_state.timetable_data = timetable_df
-                st.success(f"已读取完成班次表！共{len(timetable_df)}条记录")
-            else:
-                st.session_state.timetable_data = [
-                    {"depart_time": f"{6 + i // 2:02d}:{i % 2 * 30:02d}",
-                     "depart_hour": 6 + i // 2,
-                     "depart_minute": i % 2 * 30,
-                     "direction": "四惠" if i % 2 == 0 else "老山"}
-                    for i in range(10)
-                ]
-                st.warning(f"未找到 {timetable_type} 班次表，使用示例数据")
-            st.session_state.progress = 24
-            st.session_state.current_stage = "班次已加载"
+       st.divider()
 
+    btn1, btn2, btn3, btn4, btn5 = st.columns(5, gap="small")
+    with btn1:  # ✅ 现在缩进正确了
+        if st.button("读取班次表"):
+            # 新增：表单验证逻辑
+            if not line or not timetable_type or not solve_time:
+                st.session_state.form_warning = "⚠️ 您还未选择班次表、线路、求解时间上限等参数，请先选择后再读取班次表"
+            else:
+                # 清除警告信息
+                st.session_state.form_warning = ""
+                st.session_state.start_time = time.time()
+                timetable_df, timetable_error = load_timetable_data(timetable_type)
+                if timetable_df is not None:
+                    st.session_state.timetable_data = timetable_df
+                    st.success(f"已读取完成班次表！共{len(timetable_df)}条记录")
+                else:
+                    st.session_state.timetable_data = [
+                        {"depart_time": f"{6 + i // 2:02d}:{i % 2 * 30:02d}",
+                         "depart_hour": 6 + i // 2,
+                         "depart_minute": i % 2 * 30,
+                         "direction": "四惠" if i % 2 == 0 else "老山"}
+                        for i in range(10)
+                    ]
+                    st.warning(f"未找到 {timetable_type} 班次表，使用示例数据")
+                st.session_state.progress = 24
+                st.session_state.current_stage = "班次已加载"
     with btn2:
         if st.button("读取天气"):
             weather_info, err = get_weather_forecast(dispatch_date)
