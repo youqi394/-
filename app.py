@@ -146,8 +146,8 @@ h1, h2, h3 {
 
 /* 侧边栏背景 + 样式 */
 [data-testid="stSidebar"] {
-    background-color: #f0f5fa;
-    background-image: url("https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
+   
+    background-image: url("https://img0.baidu.com/it/u=1231392229,3829112399&fm=253&fmt=auto&app=138&f=JPEG?w=800&h=500");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -162,7 +162,7 @@ h1, h2, h3 {
 
 /* 主页面背景 */
 .stApp {
-    background-image: url("https://images.unsplash.com/photo-1519999482648-250cccdee182?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
+    background-image: url("https://img1.baidu.com/it/u=2646690913,1561802417&fm=253&fmt=auto&app=138&f=JPEG?w=1200&h=800");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
