@@ -128,7 +128,7 @@ import streamlit as st
 /* ========== 侧边栏整体美化 ========== */
 [data-testid="stSidebar"] {
     background-color: #f0f5fa;
-    background-image: url("https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
+    background-image: url("https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
