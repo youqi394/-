@@ -178,21 +178,21 @@ h1, h2, h3 {
 }
 
 /* 侧边栏文字、单选按钮美化 */
-/* 侧边栏文字、单选按钮美化 - 移除圆形选框 + 匹配按钮样式 */
+/* 侧边栏文字、单选按钮美化 */
 [data-testid="stSidebar"] p:has(label) {
     font-size: 1.1rem !important;
     font-weight: 700 !important;
     color: #2c3e50 !important;
     margin: 1rem 0 0.6rem 0 !important;
 }
-/* 隐藏原生圆形单选按钮 */
+/* 隐藏原生圆形单选框 */
 [data-testid="stSidebar"] .stRadio input {
     display: none !important;
 }
 [data-testid="stSidebar"] .stRadio > div {
     gap: 0.5rem !important;
 }
-/* 单选项整体样式（圆角矩形，匹配顶部按钮风格） */
+/* 单选选项整体样式 - 圆角矩形 */
 [data-testid="stSidebar"] .stRadio label {
     font-size: 1rem !important;
     font-weight: 500 !important;
@@ -201,17 +201,15 @@ h1, h2, h3 {
     transition: all 0.25s ease !important;
     margin: 0 !important;
     cursor: pointer !important;
-}
-/* 未选中：黑字，无背景 */
-[data-testid="stSidebar"] .stRadio label {
-    color: #2c3e50 !important;
+    /* 默认：纯黑色字体 + 透明背景 */
+    color: #000000 !important;
     background: transparent !important;
 }
-/* 悬浮浅底色 */
+/* 鼠标悬浮浅底色 */
 [data-testid="stSidebar"] .stRadio label:hover {
     background-color: #e4edf5 !important;
 }
-/* 选中状态：蓝色底 + 白色字，和页面按钮同色系 #1f77b4 */
+/* 选中状态：蓝色圆角背景 + 白色字体 */
 [data-testid="stSidebar"] .stRadio label[data-checked="true"] {
     background-color: #1f77b4 !important;
     color: #ffffff !important;
