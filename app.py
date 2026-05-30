@@ -10,12 +10,22 @@ import json
 from datetime import datetime, timedelta
 import re
 from pathlib import Path
+import sys
 
-# -------------------------- 导入公共模块（完全兼容你提供的heuristic_common.py） --------------------------
+# -------------------------- 导入公共模块（复用命令行版本的真实求解层） --------------------------
+APP_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = APP_DIR.parent
+HEURISTIC_DIR = PROJECT_ROOT / "greedy_ga_holiday_runs"
+if str(HEURISTIC_DIR) not in sys.path:
+    sys.path.insert(0, str(HEURISTIC_DIR))
+
 from heuristic_common import (
     Config,
+    HourParam,
     Solution,
+    Trip,
     decode_with_random_keys,
+    fmt_time,
 )
 
 # ==================== 全局页面样式 ====================
@@ -128,8 +138,12 @@ if 'greedy_solution' not in st.session_state:
     st.session_state.greedy_solution = None
 if 'greedy_schedule_data' not in st.session_state:
     st.session_state.greedy_schedule_data = None
+if 'greedy_charge_data' not in st.session_state:
+    st.session_state.greedy_charge_data = None
 if 'greedy_objective' not in st.session_state:
     st.session_state.greedy_objective = 0.0
+if 'charge_data' not in st.session_state:
+    st.session_state.charge_data = None
 # 遗传算法历史数据
 if 'ga_history' not in st.session_state:
     st.session_state.ga_history = None
@@ -146,6 +160,57 @@ def add_log(message):
 
 def normalize_column_name(name):
     return re.sub(r'[\s()%]', '', str(name)).lower()
+
+DATA_SEARCH_DIRS = [
+    APP_DIR / "data",
+    PROJECT_ROOT / "data",
+    PROJECT_ROOT / "验证不等式",
+]
+
+TIMETABLE_CANDIDATES = {
+    "工作日": ["工作日发车时刻表.csv", "工作日发车时刻表(1).csv", "节假日发车时刻表(1).csv"],
+    "周末": ["周末发车时刻表.csv", "节假日发车时刻表.csv", "节假日发车时刻表(1).csv"],
+    "节假日": ["节假日发车时刻表.csv", "节假日发车时刻表(1).csv"],
+}
+
+def resolve_data_file(candidates):
+    if isinstance(candidates, str):
+        candidates = [candidates]
+    checked = []
+    for base_dir in DATA_SEARCH_DIRS:
+        for name in candidates:
+            path = base_dir / name
+            checked.append(str(path))
+            if path.exists():
+                return path
+    raise FileNotFoundError("未找到数据文件，已检查：" + "；".join(checked))
+
+def read_csv_with_fallback(path):
+    try:
+        return pd.read_csv(path, dtype=str, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        return pd.read_csv(path, dtype=str, encoding="gbk")
+
+def parse_percent_to_fraction(value, default=0.1):
+    try:
+        text = str(value).strip()
+        if not text or text.lower() == "nan":
+            return default
+        if text.endswith("%"):
+            return float(text[:-1]) / 100.0
+        number = float(text)
+        return number / 100.0 if number > 1 else number
+    except Exception:
+        return default
+
+def parse_float_value(value, default=0.0):
+    try:
+        text = str(value).strip()
+        if not text or text.lower() == "nan":
+            return default
+        return float(text.replace("%", ""))
+    except Exception:
+        return default
 
 def get_carbon_season(date):
     month = date.month
@@ -226,22 +291,13 @@ def get_weather_forecast(date):
 # ==================== 加载时刻表（完全兼容heuristic_common.py格式） ====================
 @st.cache_resource
 def load_timetable_data(timetable_type):
-    file_map = {
-        "工作日": "工作日发车时刻表.csv",
-        "周末": "节假日发车时刻表.csv",
-        "节假日": "节假日发车时刻表.csv"
-    }
-    filename = file_map.get(timetable_type, "工作日发车时刻表.csv")
-    file_path = f"data/{filename}"
-    add_log(f"🔄 正在读取 {timetable_type} 时刻表：{file_path}")
     try:
-        df = pd.read_csv(file_path, dtype=str, encoding='utf-8')
-    except:
-        try:
-            df = pd.read_csv(file_path, dtype=str, encoding='gbk')
-        except Exception as e:
-            add_log(f"⚠️ 未找到 {timetable_type} 时刻表文件：{str(e)}")
-            return None, f"文件不存在或无法读取：{file_path}"
+        file_path = resolve_data_file(TIMETABLE_CANDIDATES.get(timetable_type, TIMETABLE_CANDIDATES["工作日"]))
+        add_log(f"🔄 正在读取 {timetable_type} 时刻表：{file_path}")
+        df = read_csv_with_fallback(file_path)
+    except Exception as e:
+        add_log(f"⚠️ 未找到 {timetable_type} 时刻表文件：{str(e)}")
+        return None, str(e)
     df.columns = df.columns.str.strip()
     df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     df = df.dropna(how='all')
@@ -292,9 +348,10 @@ def load_timetable_data(timetable_type):
 @st.cache_resource
 def load_carbon_data():
     try:
-        carbon_df = pd.read_csv("data/碳排放.csv", dtype=str, encoding='utf-8')
-    except:
-        carbon_df = pd.read_csv("data/碳排放.csv", dtype=str, encoding='gbk')
+        file_path = resolve_data_file("碳排放.csv")
+        carbon_df = read_csv_with_fallback(file_path)
+    except Exception as e:
+        return None, str(e)
     carbon_df.columns = carbon_df.columns.str.strip()
     carbon_df = carbon_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     for col in ['hour', 'annual', 'summer', 'winter']:
@@ -305,15 +362,16 @@ def load_carbon_data():
         error_msg = f"无法自动匹配列名。实际列名：{list(carbon_df.columns)}"
         add_log(f"❌ {error_msg}")
         return None, error_msg
-    add_log(f"✅ 成功加载 data/碳排放.csv，共{len(carbon_df)}条记录")
+    add_log(f"✅ 成功加载 {file_path}，共{len(carbon_df)}条记录")
     return carbon_df, None
 
 @st.cache_resource
 def load_runtime_data():
     try:
-        runtime_df = pd.read_csv("data/运行时间75%分位数.csv", dtype=str, encoding='utf-8')
-    except:
-        runtime_df = pd.read_csv("data/运行时间75%分位数.csv", dtype=str, encoding='gbk')
+        file_path = resolve_data_file("运行时间75%分位数.csv")
+        runtime_df = read_csv_with_fallback(file_path)
+    except Exception as e:
+        return None, str(e)
     runtime_df.columns = runtime_df.columns.str.strip()
     runtime_df = runtime_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     weather_col = None
@@ -330,15 +388,16 @@ def load_runtime_data():
         return None, error_msg
     runtime_df = runtime_df.rename(columns={weather_col: "天气", runtime_col: "75%运行时间 (min)"})
     add_log(f"✅ 成功匹配列名：天气='{weather_col}', 运行时间='{runtime_col}'")
-    add_log(f"✅ 成功加载 data/运行时间75%分位数.csv，共{len(runtime_df)}条记录")
+    add_log(f"✅ 成功加载 {file_path}，共{len(runtime_df)}条记录")
     return runtime_df, None
 
 @st.cache_resource
 def load_power_data():
     try:
-        power_df = pd.read_csv("data/电量消耗.csv", dtype=str, encoding='utf-8')
-    except:
-        power_df = pd.read_csv("data/电量消耗.csv", dtype=str, encoding='gbk')
+        file_path = resolve_data_file("电量消耗.csv")
+        power_df = read_csv_with_fallback(file_path)
+    except Exception as e:
+        return None, str(e)
     power_df.columns = power_df.columns.str.strip()
     power_df = power_df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
     time_col = None
@@ -374,8 +433,19 @@ def load_power_data():
         winter_col: "冬季"
     })
     add_log(f"✅ 成功匹配列名：时段='{time_col}', 天气类型='{weather_col}', 春季='{spring_col}', 夏季='{summer_col}', 秋季='{autumn_col}', 冬季='{winter_col}'")
-    add_log(f"✅ 成功加载 data/电量消耗.csv，共{len(power_df)}条记录")
+    add_log(f"✅ 成功加载 {file_path}，共{len(power_df)}条记录")
     return power_df, None
+
+@st.cache_resource
+def load_hourly_template_data():
+    try:
+        file_path = resolve_data_file("2026-05-26T06-59_export (1).csv")
+        template_df = read_csv_with_fallback(file_path)
+    except Exception as e:
+        return None, str(e)
+    template_df.columns = template_df.columns.str.strip()
+    add_log(f"✅ 成功加载逐时参数模板 {file_path}，共{len(template_df)}条记录")
+    return template_df, None
 
 # ==================== 统计预测、客流预测 ====================
 def statistical_prediction(weather_info):
@@ -388,6 +458,22 @@ def statistical_prediction(weather_info):
     power_df, power_error = load_power_data()
     runtime_df, runtime_error = load_runtime_data()
     carbon_df, carbon_error = load_carbon_data()
+    template_df, template_error = load_hourly_template_data()
+    template_rows = {}
+    template_power_col = None
+    template_runtime_col = None
+    template_carbon_col = None
+    if template_df is not None:
+        template_power_col = next((c for c in template_df.columns if "电量消耗" in c), None)
+        template_runtime_col = next((c for c in template_df.columns if "运行时间" in c), None)
+        template_carbon_col = next((c for c in template_df.columns if "碳排放" in c), None)
+        for _, row in template_df.iterrows():
+            hour_value = row["小时"] if "小时" in template_df.columns else row.iloc[0]
+            try:
+                hour = int(str(hour_value).split(":")[0])
+                template_rows[hour] = row
+            except Exception:
+                continue
     runtime_value = "0.00"
     if runtime_df is not None:
         matched_runtime = runtime_df[runtime_df['天气'] == current_weather].copy()
@@ -403,12 +489,20 @@ def statistical_prediction(weather_info):
     carbon_column_name = f"{season_name_map[carbon_season]}碳排放"
     for hour in range(0, 24):
         period = get_time_period(hour)
+        template_row = template_rows.get(hour)
+        runtime_value_hour = runtime_value
+        if runtime_value_hour == "0.00" and template_row is not None and template_runtime_col:
+            runtime_value_hour = template_row[template_runtime_col]
         power_value = "23.00%"
+        if template_row is not None and template_power_col:
+            power_value = template_row[template_power_col]
         if matched_power is not None:
             power_row = matched_power[matched_power['时段'] == period]
             if not power_row.empty:
                 power_value = power_row.iloc[0][power_season]
         carbon_value = 0.0
+        if template_row is not None and template_carbon_col:
+            carbon_value = parse_float_value(template_row[template_carbon_col], default=0.0)
         if carbon_df is not None:
             carbon_row = carbon_df[carbon_df['hour'] == hour]
             if not carbon_row.empty:
@@ -418,7 +512,7 @@ def statistical_prediction(weather_info):
             "时段类型": period,
             "天气": current_weather,
             power_column_name: power_value,
-            "75%运行时间 (min)": runtime_value,
+            "75%运行时间 (min)": runtime_value_hour,
             "碳排放量": f"{carbon_value:.4f}"
         }
         result.append(row_data)
@@ -445,94 +539,137 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
 def build_hour_params_from_pred_table(pred_df):
     hour_params = {}
     run_col = "75%运行时间 (min)"
-    pwr_col = None
-    for c in pred_df.columns:
-        if "电量消耗" in c:
-            pwr_col = c
-            break
+    pwr_col = next((c for c in pred_df.columns if "电量消耗" in c), None)
+    carbon_col = next((c for c in pred_df.columns if "碳排放" in c), None)
     if pwr_col is None:
-        pwr_col = "春季电量消耗"
+        raise ValueError("统计预测表缺少“电量消耗”列，无法构造求解参数")
+    if carbon_col is None:
+        raise ValueError("统计预测表缺少“碳排放”列，无法构造求解参数")
     for _, row in pred_df.iterrows():
         hour_str = row["小时"]
         hour = int(hour_str.split(":")[0])
-        period = row["时段类型"]
-        try:
-            run_t = float(row[run_col])
-        except:
-            run_t = 45.0
-        try:
-            pct_str = row[pwr_col]
-        except:
-            pct_str = "10.00%"
-        peak = period in ("早高峰", "晚高峰")
-        pax_flow = 150 if peak else 100
-        hour_params[hour] = {
-            "runtime": run_t,
-            "power_consumption": pct_str,
-            "is_peak": peak,
-            "passenger_flow": pax_flow
-        }
-    add_log("✅ 优化求解：读取页面统计预测表的运行时间、电量参数")
+        hour_params[hour] = HourParam(
+            hour=hour,
+            energy_fraction=parse_percent_to_fraction(row[pwr_col], default=0.1),
+            runtime_min=parse_float_value(row[run_col], default=45.0),
+            carbon_factor=parse_float_value(row[carbon_col], default=0.0),
+        )
+    missing = sorted(set(range(24)) - set(hour_params))
+    if missing:
+        raise ValueError(f"统计预测表缺少小时参数：{missing}")
+    add_log("✅ 优化求解：已转换为 heuristic_common.HourParam 参数")
     return hour_params
 
-# ==================== 生成标准排班表、电量/充电逻辑（20%阈值） ====================
-def generate_standard_schedule(raw_schedule, power_prediction_table, initial_battery=100.0, power_threshold=20.0):
-    if not raw_schedule:
-        return pd.DataFrame()
-    vehicle_groups = {}
-    for item in raw_schedule:
-        vehicle_id = item["vehicle_id"]
-        if vehicle_id not in vehicle_groups:
-            vehicle_groups[vehicle_id] = []
-        vehicle_groups[vehicle_id].append(item)
-    sorted_vehicles = sorted(vehicle_groups.keys(), key=lambda x: int(x.replace("车", "")))
-    power_map = {}
-    power_column = [col for col in power_prediction_table.columns if "电量消耗" in col][0]
-    for _, row in power_prediction_table.iterrows():
-        hour = int(row["小时"].split(":")[0])
-        power_str = row[power_column].replace("%", "")
-        try:
-            power_map[hour] = float(power_str)
-        except:
-            power_map[hour] = 10.0
-    final_schedule = []
-    for vehicle_id in sorted_vehicles:
-        trips = vehicle_groups[vehicle_id]
-        trips.sort(key=lambda x: (x["depart_hour"], x["depart_minute"]))
-        remaining_battery = initial_battery
-        current_station = "四惠"
-        for trip in trips:
-            depart_time = trip["depart_time"]
-            depart_hour = trip["depart_hour"]
-            direction = trip["direction"]
-            power_consumption = power_map.get(depart_hour, 10.0)
-            need_charge = False
-            if remaining_battery - power_consumption < power_threshold:
-                need_charge = True
-                remaining_battery = 100.0 - power_consumption
-            else:
-                remaining_battery -= power_consumption
-            row = {
-                "车辆编号": vehicle_id,
-                "四惠发车时间": "",
-                "老山发车时间": ""
-            }
-            display_time = depart_time
-            if need_charge:
-                display_time += "(充电)"
-            if direction == "四惠":
-                row["四惠发车时间"] = display_time
-                row["老山发车时间"] = "/"
-                current_station = "老山"
-            elif direction == "老山":
-                row["四惠发车时间"] = "/"
-                row["老山发车时间"] = display_time
-                current_station = "四惠"
-            else:
-                row["四惠发车时间"] = display_time
-                row["老山发车时间"] = "/"
-            final_schedule.append(row)
-    return pd.DataFrame(final_schedule)
+def build_trips_for_solver(raw_trips, hour_params):
+    if not raw_trips:
+        raise ValueError("班次表为空，无法求解")
+    normalized = []
+    for item in raw_trips:
+        depart_time = str(item.get("depart_time", "")).strip()
+        if ":" in depart_time:
+            hour_str, minute_str = depart_time.split(":", 1)
+            depart_hour = int(hour_str)
+            depart_minute = int(minute_str)
+        else:
+            depart_hour = int(item["depart_hour"])
+            depart_minute = int(item["depart_minute"])
+        direction = str(item.get("direction", "四惠"))
+        if direction == "B" or direction.startswith("老山"):
+            origin, dest = "B", "A"
+        else:
+            origin, dest = "A", "B"
+        depart_min = depart_hour * 60 + depart_minute
+        normalized.append((origin, dest, depart_min))
+    normalized.sort(key=lambda row: (row[2], row[0], row[1]))
+    trips = []
+    for idx, (origin, dest, depart_min) in enumerate(normalized):
+        hour = int(depart_min // 60) % 24
+        hp = hour_params[hour]
+        trips.append(
+            Trip(
+                id=idx,
+                origin=origin,
+                dest=dest,
+                depart_min=depart_min,
+                hour=hour,
+                runtime_min=hp.runtime_min,
+                energy_fraction=hp.energy_fraction,
+                carbon_factor=hp.carbon_factor,
+                label=f"T{idx + 1:03d}_{origin}_to_{dest}_{int(depart_min // 60):02d}{int(depart_min % 60):02d}",
+            )
+        )
+    add_log(f"✅ 优化求解：已转换为 heuristic_common.Trip 班次，共{len(trips)}个")
+    return trips
+
+def make_solver_config(vehicle_count):
+    total = int(vehicle_count)
+    inventory_a = total // 2
+    inventory_b = total - inventory_a
+    return Config(
+        real_total_vehicles=total,
+        initial_inventory={"A": inventory_a, "B": inventory_b},
+        min_end_inventory={"A": min(40, inventory_a), "B": min(40, inventory_b)},
+        charger_capacity={"A": 40, "B": 40},
+        rest_minutes=25.0,
+        max_late_minutes=5.0,
+    )
+
+def solution_to_trip_dataframe(solution):
+    fields = [
+        "vehicle_id", "sequence", "trip_id", "trip_label", "origin", "dest",
+        "scheduled_depart", "actual_depart", "arrival", "late_min",
+        "runtime_min", "energy_fraction", "soc_before", "soc_after",
+    ]
+    rows = []
+    for vehicle in solution.routes:
+        trip_seq = 0
+        activities = sorted(vehicle.activities, key=lambda item: (item.get("start_min", item.get("actual_depart", 0)), item["type"]))
+        for act in activities:
+            if act["type"] != "trip":
+                continue
+            trip_seq += 1
+            rows.append({
+                "vehicle_id": vehicle.id,
+                "sequence": trip_seq,
+                "trip_id": act["trip_id"] + 1,
+                "trip_label": act["trip_label"],
+                "origin": act["origin"],
+                "dest": act["dest"],
+                "scheduled_depart": fmt_time(act["scheduled_depart"]),
+                "actual_depart": fmt_time(act["actual_depart"]),
+                "arrival": fmt_time(act["arrival_min"]),
+                "late_min": round(act["late_min"], 6),
+                "runtime_min": round(act["runtime_min"], 6),
+                "energy_fraction": round(act["energy_fraction"], 8),
+                "soc_before": round(act["soc_before"], 8),
+                "soc_after": round(act["soc_after"], 8),
+            })
+    return pd.DataFrame(rows, columns=fields)
+
+def solution_to_charge_dataframe(solution):
+    fields = ["vehicle_id", "sequence", "kind", "endpoint", "start", "end", "q", "cost", "soc_before", "soc_after", "slot_ids"]
+    rows = []
+    for vehicle in solution.routes:
+        charge_seq = 0
+        activities = sorted(vehicle.activities, key=lambda item: (item.get("start_min", item.get("actual_depart", 0)), item["type"]))
+        for act in activities:
+            if act["type"] not in {"op_charge", "post_charge"}:
+                continue
+            charge_seq += 1
+            rows.append({
+                "vehicle_id": vehicle.id,
+                "sequence": charge_seq,
+                "kind": act["type"],
+                "endpoint": act["endpoint"],
+                "start": fmt_time(act["start_min"]),
+                "end": fmt_time(act["end_min"]),
+                "q": round(act["q"], 8),
+                "cost": round(act["cost"], 8),
+                "soc_before": "" if act.get("soc_before") is None else round(act["soc_before"], 8),
+                "soc_after": "" if act.get("soc_after") is None else round(act["soc_after"], 8),
+                "slot_ids": " ".join(str(gid) for gid in act.get("slot_ids", [])),
+            })
+    return pd.DataFrame(rows, columns=fields)
 
 # ==================== 遗传算子（与命令行版本1:1完全一致） ====================
 def tournament(rng: random.Random, scored: list[tuple[float, list[float], Solution]], size: int = 3) -> list[float]:
@@ -564,29 +701,24 @@ def fitness(solution: Solution) -> float:
 def optimize_greedy_only(trips, hour_params, config, initial_battery, power_prediction_table):
     """仅执行贪心算法（与命令行greedy.py完全一致）"""
     add_log("🔄 运行粗略求解（贪心算法）")
-    # 直接调用heuristic_common.py中的decode_with_random_keys
     greedy_solution = decode_with_random_keys(trips, hour_params, config, algorithm="greedy")
-    greedy_df = generate_standard_schedule(greedy_solution.schedule, power_prediction_table, initial_battery, 20.0)
-    return greedy_solution, greedy_df
+    trip_df = solution_to_trip_dataframe(greedy_solution)
+    charge_df = solution_to_charge_dataframe(greedy_solution)
+    return greedy_solution, trip_df, charge_df
 
 def optimize_genetic_full(trips, hour_params, config, initial_battery, power_prediction_table):
-    """执行遗传算法（与命令行genetic.py参数1:1一致 + 仅Gap收敛终止）"""
+    """执行遗传算法（与命令行run_genetic.py参数1:1一致）"""
     add_log("🔄 运行精确求解（遗传算法）")
     run_started = time.perf_counter()
-    # 动态随机种子，每次运行结果不同
-    rng = random.Random(int(time.time()))
-
-    # 与命令行genetic.py默认参数完全一致
+    seed = 20260528
+    rng = random.Random(seed)
     n = len(trips)
     pop_size = 56
+    generations = 90
     elite_num = 6
     mut_rate = 0.055
     top_k = 5
-    gap_threshold = 0.001
-    stable_generations = 10
-    MAX_SAFE_ITER = 1000
 
-    # 种群初始化（与命令行一致）
     population: list[list[float]] = [[0.0 for _ in range(n)]]
     while len(population) < pop_size:
         population.append([rng.random() for _ in range(n)])
@@ -594,15 +726,11 @@ def optimize_genetic_full(trips, hour_params, config, initial_battery, power_pre
     best_solution: Solution | None = None
     best_chromosome: list[float] | None = None
     ga_history = []
-    stable_count = 0
-    last_best_obj = None
-    current_gen = 0
+    st.session_state.convergence_data = []
 
-    # 仅Gap收敛终止（无固定迭代数）
-    while True:
+    for current_gen in range(generations + 1):
         scored: list[tuple[float, list[float], Solution]] = []
         for chrom in population:
-            # 直接调用heuristic_common.py中的decode_with_random_keys
             sol = decode_with_random_keys(
                 trips,
                 hour_params,
@@ -614,20 +742,9 @@ def optimize_genetic_full(trips, hour_params, config, initial_battery, power_pre
             scored.append((fitness(sol), chrom, sol))
         scored.sort(key=lambda item: item[0])
 
-        current_best = scored[0]
-        current_obj = current_best[0]
-        gap = 0.0
-        if best_solution is not None:
-            gap = abs(current_obj - fitness(best_solution)) / fitness(best_solution)
-            st.session_state.current_gap = gap
-
-        if best_solution is None or current_obj < fitness(best_solution):
-            best_solution = current_best[2]
-            best_chromosome = current_best[1][:]
-            stable_count = 0
-            last_best_obj = current_obj
-        else:
-            stable_count += 1
+        if best_solution is None or scored[0][0] < fitness(best_solution):
+            best_solution = scored[0][2]
+            best_chromosome = scored[0][1][:]
 
         best = scored[0][2]
         feasible_count = sum(1 for _, _, sol in scored if sol.feasible)
@@ -637,22 +754,21 @@ def optimize_genetic_full(trips, hour_params, config, initial_battery, power_pre
             "best_objective": best.objective,
             "best_feasible": best.feasible,
             "best_vehicles": best.vehicles_used,
-            "best_gap": gap,
+            "best_gap_to_lb": best.relative_gap_to_lb,
             "best_late_min": best.total_late_min,
-            "feasible_count": feasible_count
+            "feasible_count": feasible_count,
+            "population": len(population),
         })
+        st.session_state.current_gap = best.relative_gap_to_lb
 
-        add_log(f"gen={current_gen:03d} best={best.objective:.6f} gap={gap:.6f} stable={stable_count}/{stable_generations}")
+        add_log(
+            f"gen={current_gen:03d} best={best.objective:.6f} feasible={best.feasible} "
+            f"vehicles={best.vehicles_used} gap_lb={best.relative_gap_to_lb:.6f} feasible_count={feasible_count}"
+        )
 
-        # 核心终止条件：仅Gap收敛
-        if stable_count >= stable_generations and gap < gap_threshold:
-            add_log(f"✅ 遗传算法收敛完成，连续{stable_generations}代Gap < {gap_threshold}，算法终止")
+        if current_gen == generations:
             break
-        if current_gen >= MAX_SAFE_ITER:
-            add_log(f"⚠️ 达到安全最大迭代{MAX_SAFE_ITER}代，强制终止")
-            break
 
-        # 生成下一代（与命令行逻辑完全一致）
         next_population: list[list[float]] = [chrom[:] for _, chrom, _ in scored[: elite_num]]
         while len(next_population) < pop_size:
             left = tournament(rng, scored)
@@ -661,22 +777,25 @@ def optimize_genetic_full(trips, hour_params, config, initial_battery, power_pre
             mutate(rng, child, mut_rate)
             next_population.append(child)
         population = next_population
-        current_gen += 1
 
+    if best_solution is None or best_chromosome is None:
+        raise RuntimeError("遗传算法没有产生可用解")
     total_runtime_sec = time.perf_counter() - run_started
     best_solution.runtime_sec = total_runtime_sec
     best_solution.metadata["ga_parameters"] = {
         "population": pop_size,
+        "generations": generations,
         "elite": elite_num,
         "mutation_rate": mut_rate,
         "top_k": top_k,
-        "seed": "dynamic"
+        "seed": seed,
     }
     st.session_state.ga_history = ga_history
     st.session_state.best_chromosome = best_chromosome
     st.session_state.current_objective = best_solution.objective
-    df = generate_standard_schedule(best_solution.schedule, power_prediction_table, initial_battery, 20.0)
-    return best_solution, df
+    trip_df = solution_to_trip_dataframe(best_solution)
+    charge_df = solution_to_charge_dataframe(best_solution)
+    return best_solution, trip_df, charge_df
 
 # ==================== 侧边栏 & 页面布局 ====================
 st.sidebar.title("🚌 智能公交调度系统")
@@ -695,7 +814,7 @@ if page == "📅 今日调度":
         line = st.selectbox("线路/场站", ["1路", "2路", "3路", "4路", "5路"])
         timetable_type = st.selectbox("班次表", ["工作日", "周末", "节假日"])
     with col2:
-        vehicle_count = st.number_input("当日车辆数", 1, 50, 15)
+        vehicle_count = st.number_input("当日车辆数", 1, 120, 87)
         initial_battery = st.number_input("初始电量（%）", 0, 100, 100)
         solve_time = st.number_input("求解时间上限（秒）", 60, 3600, 300)
 
@@ -763,23 +882,21 @@ if page == "📅 今日调度":
                 status_text = st.empty()
 
                 hour_params = build_hour_params_from_pred_table(st.session_state.power_prediction_table)
-                trips = st.session_state.timetable_data
-                config = Config(
-                    charger_capacity={"A": 40, "B": 40},
-                    rest_minutes=25.0,
-                    max_late_minutes=5.0
-                )
+                trips = build_trips_for_solver(st.session_state.timetable_data, hour_params)
+                config = make_solver_config(vehicle_count)
 
                 # 根据选择执行对应算法
                 if solve_mode == "粗略求解（贪心算法）":
                     status_text.text("正在运行粗略求解（贪心算法）...")
                     progress_bar.progress(10)
-                    greedy_sol, greedy_df = optimize_greedy_only(trips, hour_params, config, initial_battery, st.session_state.power_prediction_table)
+                    greedy_sol, greedy_df, greedy_charge_df = optimize_greedy_only(trips, hour_params, config, initial_battery, st.session_state.power_prediction_table)
                     st.session_state.greedy_solution = greedy_sol
                     st.session_state.greedy_schedule_data = greedy_df
+                    st.session_state.greedy_charge_data = greedy_charge_df
                     st.session_state.greedy_objective = greedy_sol.objective
                     st.session_state.optimization_result = None
                     st.session_state.schedule_data = None
+                    st.session_state.charge_data = None
                     st.session_state.current_objective = greedy_sol.objective
                     progress_bar.progress(100)
                     status_text.empty()
@@ -788,16 +905,18 @@ if page == "📅 今日调度":
                     # 精确求解：先跑贪心，再跑遗传（与命令行逻辑一致）
                     status_text.text("正在运行贪心算法（基准解）...")
                     progress_bar.progress(5)
-                    greedy_sol, greedy_df = optimize_greedy_only(trips, hour_params, config, initial_battery, st.session_state.power_prediction_table)
+                    greedy_sol, greedy_df, greedy_charge_df = optimize_greedy_only(trips, hour_params, config, initial_battery, st.session_state.power_prediction_table)
                     st.session_state.greedy_solution = greedy_sol
                     st.session_state.greedy_schedule_data = greedy_df
+                    st.session_state.greedy_charge_data = greedy_charge_df
                     st.session_state.greedy_objective = greedy_sol.objective
 
                     status_text.text("正在运行遗传算法（精确解）...")
                     progress_bar.progress(10)
-                    gen_sol, gen_df = optimize_genetic_full(trips, hour_params, config, initial_battery, st.session_state.power_prediction_table)
+                    gen_sol, gen_df, gen_charge_df = optimize_genetic_full(trips, hour_params, config, initial_battery, st.session_state.power_prediction_table)
                     st.session_state.optimization_result = gen_sol
                     st.session_state.schedule_data = gen_df
+                    st.session_state.charge_data = gen_charge_df
                     progress_bar.progress(100)
                     status_text.empty()
                     st.success("✅ 精确求解完成！")
@@ -811,10 +930,16 @@ if page == "📅 今日调度":
                 dispatch_date = st.session_state.weather_data["date"] if st.session_state.weather_data else datetime.now().date()
                 csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
                 st.download_button("📥 下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
+                if st.session_state.greedy_charge_data is not None:
+                    csv_greedy_charge = st.session_state.greedy_charge_data.to_csv(index=False, encoding='utf-8-sig')
+                    st.download_button("📥 下载粗略解充电表", csv_greedy_charge, f"公交充电表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
                 # 仅遗传模式才导出遗传相关文件
                 if st.session_state.current_solve_mode == "精确求解（遗传算法）" and st.session_state.schedule_data is not None:
                     csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
                     st.download_button("📥 下载精确解排班表", csv_genetic, f"公交排班表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
+                    if st.session_state.charge_data is not None:
+                        csv_genetic_charge = st.session_state.charge_data.to_csv(index=False, encoding='utf-8-sig')
+                        st.download_button("📥 下载精确解充电表", csv_genetic_charge, f"公交充电表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
                     if st.session_state.ga_history:
                         hist_df = pd.DataFrame(st.session_state.ga_history)
                         csv_hist = hist_df.to_csv(index=False, encoding="utf-8-sig")
@@ -967,6 +1092,11 @@ elif page == "📋 排班结果":
             csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
             current_date = st.session_state.weather_data["date"] if st.session_state.weather_data else datetime.now().date()
             st.download_button("📥 下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{current_date.strftime('%Y%m%d')}.csv")
+            if st.session_state.greedy_charge_data is not None:
+                with st.expander("粗略解充电表"):
+                    st.dataframe(st.session_state.greedy_charge_data, use_container_width=True)
+                    csv_greedy_charge = st.session_state.greedy_charge_data.to_csv(index=False, encoding='utf-8-sig')
+                    st.download_button("📥 下载粗略解充电表", csv_greedy_charge, f"公交充电表_粗略解_{current_date.strftime('%Y%m%d')}.csv")
         else:
             st.info("请先完成优化求解")
 
@@ -978,11 +1108,21 @@ elif page == "📋 排班结果":
             csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
             current_date = st.session_state.weather_data["date"] if st.session_state.weather_data else datetime.now().date()
             st.download_button("📥 下载基准解排班表", csv_greedy, f"公交排班表_基准解_{current_date.strftime('%Y%m%d')}.csv")
+            if st.session_state.greedy_charge_data is not None:
+                with st.expander("基准解充电表"):
+                    st.dataframe(st.session_state.greedy_charge_data, use_container_width=True)
+                    csv_greedy_charge = st.session_state.greedy_charge_data.to_csv(index=False, encoding='utf-8-sig')
+                    st.download_button("📥 下载基准解充电表", csv_greedy_charge, f"公交充电表_基准解_{current_date.strftime('%Y%m%d')}.csv")
             st.divider()
         if st.session_state.schedule_data is not None:
             st.subheader("🎯 精确解（遗传算法）排班表")
             st.dataframe(st.session_state.schedule_data, use_container_width=True)
             csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
             st.download_button("📥 下载精确解排班表", csv_genetic, f"公交排班表_精确解_{current_date.strftime('%Y%m%d')}.csv")
+            if st.session_state.charge_data is not None:
+                with st.expander("精确解充电表"):
+                    st.dataframe(st.session_state.charge_data, use_container_width=True)
+                    csv_genetic_charge = st.session_state.charge_data.to_csv(index=False, encoding='utf-8-sig')
+                    st.download_button("📥 下载精确解充电表", csv_genetic_charge, f"公交充电表_精确解_{current_date.strftime('%Y%m%d')}.csv")
         else:
             st.info("请先完成优化求解")
