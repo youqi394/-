@@ -998,7 +998,15 @@ def optimize_genetic_full(
 
 
 # ==================== 侧边栏 & 页面布局（完全保留原逻辑） ====================
+# ==================== 侧边栏 & 页面布局（完全保留原逻辑） ====================
 st.sidebar.title("智能公交调度系统")
+
+# 👇 这里插入你要的公交图标
+st.sidebar.image(
+    "https://cdn-icons-png.flaticon.com/512/1161/1161490.png",
+    use_column_width=True
+)
+
 st.sidebar.divider()
 page = st.sidebar.radio("功能模块", ["今日调度", "数据管理", "统计预测结果", "优化求解", "排班结果"])
 st.sidebar.divider()
