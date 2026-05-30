@@ -162,7 +162,7 @@ h1, h2, h3 {
 
 /* 主页面背景 */
 .stApp {
-    background-image: url("https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80");
+    background-image: url("https://images.unsplash.com/photo-1519999482648-250cccdee182?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
