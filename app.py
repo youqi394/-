@@ -164,11 +164,7 @@ h1, h2, h3 {
     font-weight: 600 !important;
 }
 
-/* 侧边栏分割线 */
-[data-testid="stSidebar"] hr {
-    margin: 1rem 0 !important;
-    border-color: #d8e2ec !important;
-}
+
 
 
 </style>
