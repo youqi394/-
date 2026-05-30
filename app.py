@@ -52,7 +52,7 @@ if SOLVER_IMPORT_ERROR is not None:
     st.code("\n".join(str(path) for path in SOLVER_SEARCH_DIRS), language="text")
     st.stop()
 
-# ==================== 全局页面样式（仅修改进度条部分） ====================
+# ==================== 全局页面样式（仅彻底修正进度条部分） ====================
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
@@ -82,7 +82,7 @@ h1, h2, h3 {
     color: #2c3e50;
     font-weight: 600;
 }
-/* 进度条：纯白色底色+浅灰色边框+蓝色进度（已修正） */
+/* 进度条：纯白色底色+浅灰色细边框+纯蓝色进度（已彻底修正） */
 .stProgress {
     display: flex;
     flex-direction: column;
@@ -100,20 +100,22 @@ h1, h2, h3 {
     border: none !important;
     box-shadow: none !important;
 }
-/* 进度条背景容器：纯白色 */
-.stProgress > div:nth-child(2) {
+/* 进度条容器：纯白色底色+浅灰色细边框 */
+.stProgress [role="progressbar"] {
     height: 12px !important;
     margin: 0 !important;
     background-color: #ffffff !important;
     border: 1px solid #dee2e6 !important;
     border-radius: 10px !important;
     overflow: hidden !important;
+    box-shadow: none !important;
 }
-/* 进度条填充部分：蓝色 */
-.stProgress > div:nth-child(2) > div {
+/* 进度条填充部分：纯蓝色 */
+.stProgress [role="progressbar"] > div {
     background-color: #1f77b4 !important;
     border-radius: 9px !important;
     height: 100% !important;
+    transition: width 0.3s ease !important;
 }
 .stMetric [data-testid="stMetricValue"] {
     font-size: 1.7rem !important;
@@ -1238,4 +1240,4 @@ elif page == "优化求解":
             if st.session_state.ga_history:
                 st.subheader("每代迭代明细")
                 hist_df = pd.DataFrame(st.session_state.ga_history)
-                st.data
+                st.dataframe(hist_df, use_container_width=True)
