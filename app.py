@@ -124,22 +124,38 @@ h1, h2, h3 {
 }
 
 /* ========== 侧边栏整体美化 ========== */
+/* ========== 侧边栏整体美化 ========== */
 [data-testid="stSidebar"] {
     background-color: #f0f5fa;
-    /* 加入适配的背景图 */
     background-image: url("https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
-    background-size: cover; /* 图片铺满整个侧边栏 */
-    background-position: center; /* 图片居中显示 */
-    background-repeat: no-repeat; /* 图片不重复平铺 */
-    background-attachment: fixed; /* 背景固定，不随滚动条移动 */
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
     padding: 1.2rem 0.8rem !important;
 }
 
-/* 给侧边栏文字加一层半透明遮罩，保证文字清晰可读 */
+/* 侧边栏文字半透明遮罩，保证可读性 */
 [data-testid="stSidebar"] > div:first-child {
     background-color: rgba(255, 255, 255, 0.75);
     padding: 1rem;
     border-radius: 8px;
+}
+
+/* ========== 主页面背景图（解决右侧单调问题） ========== */
+.stApp {
+    background-image: url("https://images.unsplash.com/photo-1451187580459-43490279c0fa?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}
+
+/* 给主页面内容也加一层半透明遮罩，保证文字清晰 */
+.stApp > div:first-child > div:first-child {
+    background-color: rgba(255, 255, 255, 0.85);
+    border-radius: 12px;
+    padding: 1rem;
 }
 
 
