@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import re
 from pathlib import Path
 
-# -------------------------- 导入公共模块 --------------------------
+# -------------------------- 导入公共模块（完全兼容你提供的heuristic_common.py） --------------------------
 from heuristic_common import (
     Config,
     Solution,
@@ -135,6 +135,9 @@ if 'ga_history' not in st.session_state:
     st.session_state.ga_history = None
 if 'best_chromosome' not in st.session_state:
     st.session_state.best_chromosome = None
+# 记录当前选择的求解方式（跨页面使用）
+if 'current_solve_mode' not in st.session_state:
+    st.session_state.current_solve_mode = ""
 
 # ==================== 工具函数 ====================
 def add_log(message):
@@ -174,7 +177,7 @@ def get_time_period(hour):
     else:
         return "低峰"
 
-# ==================== 天气获取 ====================
+# ==================== 天气获取（修复高德API无效提示） ====================
 def get_weather_forecast(date):
     WEATHER_API_KEY = "e088a35c897818780a479973d4623063"
     today = datetime.now().date()
@@ -205,12 +208,12 @@ def get_weather_forecast(date):
                         return weather_info, None
                 add_log(f"⚠️ 高德返回无 {target}（超出3天？）")
             else:
-                add_log(f"⚠️ 高德API status=0：{data.get('info')}")
+                add_log(f"⚠️ 高德API调用失败：{data.get('info')}，将使用默认天气")
         except Exception as e:
-            add_log(f"⚠️ 高德请求异常：{e}")
+            add_log(f"⚠️ 高德请求异常：{e}，将使用默认天气")
     else:
-        st.session_state.weather_source = "ℹ️ 历史/超3天 → 固定默认值（18~25℃晴）"
-        add_log(f"ℹ️ {date} 不在未来3天 → 用默认天气")
+        st.session_state.weather_source = "ℹ️ 历史/超3天 → 使用默认天气"
+        add_log(f"ℹ️ {date} 不在未来3天 → 使用默认天气")
     default_weather = {
         "date": date,
         "temp_max": 25,
@@ -220,7 +223,7 @@ def get_weather_forecast(date):
     }
     return default_weather, None
 
-# ==================== 加载时刻表 ====================
+# ==================== 加载时刻表（完全兼容heuristic_common.py格式） ====================
 @st.cache_resource
 def load_timetable_data(timetable_type):
     file_map = {
@@ -416,7 +419,7 @@ def statistical_prediction(weather_info):
             "天气": current_weather,
             power_column_name: power_value,
             "75%运行时间 (min)": runtime_value,
-            carbon_column_name: f"{carbon_value:.4f}"
+            "碳排放量": f"{carbon_value:.4f}"
         }
         result.append(row_data)
     return pd.DataFrame(result)
@@ -438,7 +441,7 @@ def predict_passenger_flow(date, line_id, is_workday, weather_data):
         predictions.append(round(flow * (0.9 + random.random() * 0.2)))
     return hours, predictions
 
-# ==================== 从统计预测表解析参数 ====================
+# ==================== 从统计预测表解析参数（直接传给heuristic_common.py） ====================
 def build_hour_params_from_pred_table(pred_df):
     hour_params = {}
     run_col = "75%运行时间 (min)"
@@ -531,7 +534,7 @@ def generate_standard_schedule(raw_schedule, power_prediction_table, initial_bat
             final_schedule.append(row)
     return pd.DataFrame(final_schedule)
 
-# ==================== 遗传算子（与命令行完全一致） ====================
+# ==================== 遗传算子（与命令行版本1:1完全一致） ====================
 def tournament(rng: random.Random, scored: list[tuple[float, list[float], Solution]], size: int = 3) -> list[float]:
     picks = [rng.choice(scored) for _ in range(size)]
     picks.sort(key=lambda item: item[0])
@@ -546,7 +549,7 @@ def crossover(rng: random.Random, left: list[float], right: list[float]) -> list
     b = rng.randrange(a, len(left))
     child = left[:a] + right[a:b] + left[b:]
     if rng.random() < 0.25:
-        child = [right[i] if rng.random() < 0.5 else left[i] for i in range(len(left))]
+        child = [right[i] if rng.random() < 0.5 else child[i] for i in range(len(child))]
     return child
 
 def mutate(rng: random.Random, chromosome: list[float], rate: float) -> None:
@@ -557,21 +560,23 @@ def mutate(rng: random.Random, chromosome: list[float], rate: float) -> None:
 def fitness(solution: Solution) -> float:
     return solution.objective
 
-# ==================== 优化主函数（精简版，支持两种求解方式） ====================
+# ==================== 优化主函数（1:1兼容命令行参数 + 仅Gap收敛） ====================
 def optimize_greedy_only(trips, hour_params, config, initial_battery, power_prediction_table):
-    """仅执行贪心算法"""
+    """仅执行贪心算法（与命令行greedy.py完全一致）"""
     add_log("🔄 运行粗略求解（贪心算法）")
+    # 直接调用heuristic_common.py中的decode_with_random_keys
     greedy_solution = decode_with_random_keys(trips, hour_params, config, algorithm="greedy")
     greedy_df = generate_standard_schedule(greedy_solution.schedule, power_prediction_table, initial_battery, 20.0)
     return greedy_solution, greedy_df
 
 def optimize_genetic_full(trips, hour_params, config, initial_battery, power_prediction_table):
-    """执行遗传算法（带Gap收敛终止，动态随机种子）"""
+    """执行遗传算法（与命令行genetic.py参数1:1一致 + 仅Gap收敛终止）"""
     add_log("🔄 运行精确求解（遗传算法）")
     run_started = time.perf_counter()
     # 动态随机种子，每次运行结果不同
     rng = random.Random(int(time.time()))
 
+    # 与命令行genetic.py默认参数完全一致
     n = len(trips)
     pop_size = 56
     elite_num = 6
@@ -581,7 +586,7 @@ def optimize_genetic_full(trips, hour_params, config, initial_battery, power_pre
     stable_generations = 10
     MAX_SAFE_ITER = 1000
 
-    # 种群初始化
+    # 种群初始化（与命令行一致）
     population: list[list[float]] = [[0.0 for _ in range(n)]]
     while len(population) < pop_size:
         population.append([rng.random() for _ in range(n)])
@@ -593,10 +598,19 @@ def optimize_genetic_full(trips, hour_params, config, initial_battery, power_pre
     last_best_obj = None
     current_gen = 0
 
+    # 仅Gap收敛终止（无固定迭代数）
     while True:
         scored: list[tuple[float, list[float], Solution]] = []
         for chrom in population:
-            sol = decode_with_random_keys(trips, hour_params, config, genes=chrom, top_k=top_k, algorithm="genetic")
+            # 直接调用heuristic_common.py中的decode_with_random_keys
+            sol = decode_with_random_keys(
+                trips,
+                hour_params,
+                config,
+                genes=chrom,
+                top_k=top_k,
+                algorithm="genetic",
+            )
             scored.append((fitness(sol), chrom, sol))
         scored.sort(key=lambda item: item[0])
 
@@ -624,11 +638,13 @@ def optimize_genetic_full(trips, hour_params, config, initial_battery, power_pre
             "best_feasible": best.feasible,
             "best_vehicles": best.vehicles_used,
             "best_gap": gap,
+            "best_late_min": best.total_late_min,
             "feasible_count": feasible_count
         })
 
         add_log(f"gen={current_gen:03d} best={best.objective:.6f} gap={gap:.6f} stable={stable_count}/{stable_generations}")
 
+        # 核心终止条件：仅Gap收敛
         if stable_count >= stable_generations and gap < gap_threshold:
             add_log(f"✅ 遗传算法收敛完成，连续{stable_generations}代Gap < {gap_threshold}，算法终止")
             break
@@ -636,6 +652,7 @@ def optimize_genetic_full(trips, hour_params, config, initial_battery, power_pre
             add_log(f"⚠️ 达到安全最大迭代{MAX_SAFE_ITER}代，强制终止")
             break
 
+        # 生成下一代（与命令行逻辑完全一致）
         next_population: list[list[float]] = [chrom[:] for _, chrom, _ in scored[: elite_num]]
         while len(next_population) < pop_size:
             left = tournament(rng, scored)
@@ -648,7 +665,13 @@ def optimize_genetic_full(trips, hour_params, config, initial_battery, power_pre
 
     total_runtime_sec = time.perf_counter() - run_started
     best_solution.runtime_sec = total_runtime_sec
-    best_solution.metadata["ga_parameters"] = {"population": pop_size, "elite": elite_num, "mutation_rate": mut_rate}
+    best_solution.metadata["ga_parameters"] = {
+        "population": pop_size,
+        "elite": elite_num,
+        "mutation_rate": mut_rate,
+        "top_k": top_k,
+        "seed": "dynamic"
+    }
     st.session_state.ga_history = ga_history
     st.session_state.best_chromosome = best_chromosome
     st.session_state.current_objective = best_solution.objective
@@ -663,7 +686,7 @@ page = st.sidebar.radio("功能模块", ["📅 今日调度", "📊 数据管理
 st.sidebar.divider()
 st.sidebar.info("智能公交调度系统")
 
-# -------------------------- 今日调度页面（已简化，去掉所有遗传参数配置） --------------------------
+# -------------------------- 今日调度页面 --------------------------
 if page == "📅 今日调度":
     st.header("🚌 智能公交调度", divider="blue")
     col1, col2 = st.columns(2)
@@ -679,6 +702,8 @@ if page == "📅 今日调度":
     # 求解方式选择
     st.divider()
     solve_mode = st.selectbox("优化求解方式", ["粗略求解（贪心算法）", "精确求解（遗传算法）"])
+    # 保存当前选择的模式，供其他页面判断
+    st.session_state.current_solve_mode = solve_mode
     st.divider()
 
     btn1, btn2, btn3, btn4, btn5 = st.columns(5, gap="small")
@@ -739,7 +764,11 @@ if page == "📅 今日调度":
 
                 hour_params = build_hour_params_from_pred_table(st.session_state.power_prediction_table)
                 trips = st.session_state.timetable_data
-                config = Config(charger_capacity={"A": 40, "B": 40}, rest_minutes=25.0, max_late_minutes=5.0)
+                config = Config(
+                    charger_capacity={"A": 40, "B": 40},
+                    rest_minutes=25.0,
+                    max_late_minutes=5.0
+                )
 
                 # 根据选择执行对应算法
                 if solve_mode == "粗略求解（贪心算法）":
@@ -749,15 +778,15 @@ if page == "📅 今日调度":
                     st.session_state.greedy_solution = greedy_sol
                     st.session_state.greedy_schedule_data = greedy_df
                     st.session_state.greedy_objective = greedy_sol.objective
-                    st.session_state.optimization_result = greedy_sol
-                    st.session_state.schedule_data = greedy_df
+                    st.session_state.optimization_result = None
+                    st.session_state.schedule_data = None
                     st.session_state.current_objective = greedy_sol.objective
                     progress_bar.progress(100)
                     status_text.empty()
                     st.success("✅ 粗略求解完成！")
                 else:
-                    # 先跑贪心，再跑遗传
-                    status_text.text("正在运行贪心算法（粗略解）...")
+                    # 精确求解：先跑贪心，再跑遗传（与命令行逻辑一致）
+                    status_text.text("正在运行贪心算法（基准解）...")
                     progress_bar.progress(5)
                     greedy_sol, greedy_df = optimize_greedy_only(trips, hour_params, config, initial_battery, st.session_state.power_prediction_table)
                     st.session_state.greedy_solution = greedy_sol
@@ -778,15 +807,18 @@ if page == "📅 今日调度":
 
     with btn5:
         if st.button("导出排班结果"):
-            if st.session_state.schedule_data is not None and st.session_state.greedy_schedule_data is not None:
+            if st.session_state.greedy_schedule_data is not None:
+                dispatch_date = st.session_state.weather_data["date"] if st.session_state.weather_data else datetime.now().date()
                 csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
-                csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
                 st.download_button("📥 下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{dispatch_date.strftime('%Y%m%d')}.csv")
-                st.download_button("📥 下载精确解排班表", csv_genetic, f"公交排班表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
-                if st.session_state.ga_history is not None:
-                    hist_df = pd.DataFrame(st.session_state.ga_history)
-                    csv_hist = hist_df.to_csv(index=False, encoding="utf-8-sig")
-                    st.download_button("📥 下载遗传迭代历史", csv_hist, f"GA_历史记录_{dispatch_date.strftime('%Y%m%d')}.csv")
+                # 仅遗传模式才导出遗传相关文件
+                if st.session_state.current_solve_mode == "精确求解（遗传算法）" and st.session_state.schedule_data is not None:
+                    csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
+                    st.download_button("📥 下载精确解排班表", csv_genetic, f"公交排班表_精确解_{dispatch_date.strftime('%Y%m%d')}.csv")
+                    if st.session_state.ga_history:
+                        hist_df = pd.DataFrame(st.session_state.ga_history)
+                        csv_hist = hist_df.to_csv(index=False, encoding="utf-8-sig")
+                        st.download_button("📥 下载遗传迭代历史", csv_hist, f"GA_历史记录_{dispatch_date.strftime('%Y%m%d')}.csv")
                 st.session_state.progress = 100
                 st.session_state.current_stage = "全部完成"
             else:
@@ -863,64 +895,94 @@ elif page == "📊 统计预测结果":
     if st.session_state.power_prediction_table is None or st.session_state.power_prediction_table.empty:
         st.info("请先在「今日调度」页面点击「运行统计预测」")
     else:
-        current_date = st.session_state.weather_data['date']
+        current_date = st.session_state.weather_data['date'] if st.session_state.weather_data else datetime.now().date()
         power_season = get_power_season(current_date)
         carbon_season = get_carbon_season(current_date)
         season_name_map = {"summer": "夏季", "winter": "冬季", "annual": "全年"}
-        st.subheader(f"调度日期：{current_date.strftime('%Y-%m-%d')} | 当日天气：{st.session_state.weather_data['weather']}")
+        st.subheader(f"调度日期：{current_date.strftime('%Y-%m-%d')} | 当日天气：{st.session_state.weather_data['weather'] if st.session_state.weather_data else '无'}")
         st.subheader(f"电量季节：{power_season} | 碳排放季节：{season_name_map[carbon_season]}")
         st.dataframe(st.session_state.power_prediction_table, use_container_width=True, height=800)
         csv_data = st.session_state.power_prediction_table.to_csv(index=False, encoding='utf-8-sig')
         st.download_button("📥 下载24小时逐时统计预测结果表", csv_data, f"24小时逐时统计预测结果_{current_date.strftime('%Y%m%d')}.csv")
-        st.success("✅ 所有数据100%来自你上传的CSV文件，完全匹配当日天气和季节")
+        st.success("✅ 所有数据来自上传CSV文件，匹配当日天气和季节")
 
-# -------------------------- 优化求解页面 --------------------------
+# -------------------------- 优化求解页面（区分两种模式） --------------------------
 elif page == "⚙️ 优化求解":
     st.header("⚙️ 优化求解", divider="blue")
-    if st.session_state.greedy_solution:
-        st.subheader("📌 粗略解（贪心算法）")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("最优目标值", f"{st.session_state.greedy_objective:.2f}")
-        with col2:
-            st.metric("使用车辆数", st.session_state.greedy_solution.vehicles_used)
-        st.divider()
-    if st.session_state.optimization_result:
-        st.subheader("🎯 精确解（遗传算法）")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("最优目标值", f"{st.session_state.current_objective:.2f}")
-        with col2:
-            st.metric("使用车辆数", st.session_state.optimization_result.vehicles_used)
-        with col3:
-            st.metric("运行耗时(s)", f"{st.session_state.optimization_result.runtime_sec:.2f}")
-        if st.session_state.convergence_data:
-            st.subheader("遗传算法收敛曲线")
-            conv_df = pd.DataFrame(st.session_state.convergence_data, columns=["代次", "目标值"])
-            st.line_chart(conv_df.set_index("代次"))
-        if st.session_state.ga_history is not None:
-            st.subheader("每代迭代明细")
-            hist_df = pd.DataFrame(st.session_state.ga_history)
-            st.dataframe(hist_df, use_container_width=True)
-    else:
-        st.info("请先在「今日调度」页面点击「开始优化求解」")
+    solve_mode = st.session_state.current_solve_mode
 
-# -------------------------- 排班结果页面 --------------------------
+    # 粗略求解：只展示贪心结果
+    if solve_mode == "粗略求解（贪心算法）":
+        if st.session_state.greedy_solution:
+            st.subheader("📌 粗略解（贪心算法）")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("最优目标值", f"{st.session_state.greedy_objective:.2f}")
+            with col2:
+                st.metric("使用车辆数", st.session_state.greedy_solution.vehicles_used)
+        else:
+            st.info("请先在「今日调度」页面点击「开始优化求解」")
+
+    # 精确求解：同时展示贪心 + 遗传
+    elif solve_mode == "精确求解（遗传算法）":
+        if st.session_state.greedy_solution:
+            st.subheader("📌 基准解（贪心算法）")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("最优目标值", f"{st.session_state.greedy_objective:.2f}")
+            with col2:
+                st.metric("使用车辆数", st.session_state.greedy_solution.vehicles_used)
+            st.divider()
+
+        if st.session_state.optimization_result:
+            st.subheader("🎯 精确解（遗传算法）")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("最优目标值", f"{st.session_state.current_objective:.2f}")
+            with col2:
+                st.metric("使用车辆数", st.session_state.optimization_result.vehicles_used)
+            with col3:
+                st.metric("运行耗时(s)", f"{st.session_state.optimization_result.runtime_sec:.2f}")
+            if st.session_state.convergence_data:
+                st.subheader("遗传算法收敛曲线")
+                conv_df = pd.DataFrame(st.session_state.convergence_data, columns=["代次", "目标值"])
+                st.line_chart(conv_df.set_index("代次"))
+            if st.session_state.ga_history:
+                st.subheader("每代迭代明细")
+                hist_df = pd.DataFrame(st.session_state.ga_history)
+                st.dataframe(hist_df, use_container_width=True)
+        else:
+            st.info("请先在「今日调度」页面点击「开始优化求解」")
+
+# -------------------------- 排班结果页面（区分两种模式） --------------------------
 elif page == "📋 排班结果":
     st.header("📋 排班结果", divider="blue")
-    if st.session_state.greedy_schedule_data is not None:
-        st.subheader("📌 粗略解（贪心算法）排班表")
-        st.dataframe(st.session_state.greedy_schedule_data, use_container_width=True)
-        csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
-        current_date = datetime.now().date()
-        if st.session_state.weather_data:
-            current_date = st.session_state.weather_data['date']
-        st.download_button("📥 下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{current_date.strftime('%Y%m%d')}.csv")
-        st.divider()
-    if st.session_state.schedule_data is not None:
-        st.subheader("🎯 精确解（遗传算法）排班表")
-        st.dataframe(st.session_state.schedule_data, use_container_width=True)
-        csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
-        st.download_button("📥 下载精确解排班表", csv_genetic, f"公交排班表_精确解_{current_date.strftime('%Y%m%d')}.csv")
-    else:
-        st.info("请先完成优化求解")
+    solve_mode = st.session_state.current_solve_mode
+
+    # 粗略求解：仅展示贪心排班表
+    if solve_mode == "粗略求解（贪心算法）":
+        if st.session_state.greedy_schedule_data is not None:
+            st.subheader("📌 粗略解（贪心算法）排班表")
+            st.dataframe(st.session_state.greedy_schedule_data, use_container_width=True)
+            csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
+            current_date = st.session_state.weather_data["date"] if st.session_state.weather_data else datetime.now().date()
+            st.download_button("📥 下载粗略解排班表", csv_greedy, f"公交排班表_粗略解_{current_date.strftime('%Y%m%d')}.csv")
+        else:
+            st.info("请先完成优化求解")
+
+    # 精确求解：同时展示两个排班表
+    elif solve_mode == "精确求解（遗传算法）":
+        if st.session_state.greedy_schedule_data is not None:
+            st.subheader("📌 基准解（贪心算法）排班表")
+            st.dataframe(st.session_state.greedy_schedule_data, use_container_width=True)
+            csv_greedy = st.session_state.greedy_schedule_data.to_csv(index=False, encoding='utf-8-sig')
+            current_date = st.session_state.weather_data["date"] if st.session_state.weather_data else datetime.now().date()
+            st.download_button("📥 下载基准解排班表", csv_greedy, f"公交排班表_基准解_{current_date.strftime('%Y%m%d')}.csv")
+            st.divider()
+        if st.session_state.schedule_data is not None:
+            st.subheader("🎯 精确解（遗传算法）排班表")
+            st.dataframe(st.session_state.schedule_data, use_container_width=True)
+            csv_genetic = st.session_state.schedule_data.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button("📥 下载精确解排班表", csv_genetic, f"公交排班表_精确解_{current_date.strftime('%Y%m%d')}.csv")
+        else:
+            st.info("请先完成优化求解")
