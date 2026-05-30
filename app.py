@@ -1093,12 +1093,12 @@ st.sidebar.markdown(
 # -------------------------- 今日调度页面 --------------------------
 if page == "今日调度":
     st.header("智能公交调度", divider="blue")
-    col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
     with col1:
         dispatch_date = st.date_input("调度日期", datetime.now().date())
         line = st.selectbox("线路/场站", ["北京1路", "北京2路", "雄安301路", "雄安302路", "雄安319路"])
         timetable_type = st.selectbox("班次表", ["工作日", "节假日"])
-        with col2:
+    with col2:
         vehicle_count = st.number_input("当日车辆数", 1, 120, 87)
         initial_battery = st.number_input("初始电量（%）", 0, 100, 100)
         solve_time = st.number_input("求解时间上限（秒）", 5, 600, 45)
@@ -1115,10 +1115,9 @@ if page == "今日调度":
             st.error(st.session_state.form_warning)
 
     solve_mode = st.selectbox("优化求解方式", ["粗略求解（贪心算法）", "精确求解（遗传算法）"])
+    # 保存当前选择的模式，供其他页面判断
     st.session_state.current_solve_mode = solve_mode
     st.divider()
-
-       st.divider()
 
     btn1, btn2, btn3, btn4, btn5 = st.columns(5, gap="small")
     with btn1:  # ✅ 现在缩进正确了
