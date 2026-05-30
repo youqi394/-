@@ -947,7 +947,11 @@ if page == "今日调度":
     st.session_state.current_solve_mode = solve_mode
     st.divider()
 
-    btn1, btn2, btn3, btn4, btn5 = st.columns(5, gap="small")
+        # ========== 功能操作 ==========
+    st.markdown("#### 功能操作")
+    st.divider()
+    # 五大功能按钮
+    btn1, btn2, btn3, btn4, btn5 = st.columns(5, gap="medium")
     with btn1:
         if st.button("读取班次表"):
             st.session_state.start_time = time.time()
@@ -1090,11 +1094,27 @@ if page == "今日调度":
             else:
                 st.warning("请先完成求解")
 
+    # ========== 整体进度 ==========
     st.divider()
-    st.progress(st.session_state.progress / 100, text=f"进度 {st.session_state.progress}%")
+    st.markdown("#### 整体进度")
+    st.markdown(
+        """
+        <div style="padding: 1rem; background-color: #f8f9fa; border-radius: 10px; border: 1px solid #e9ecef;">
+        """,
+        unsafe_allow_html=True
+    )
+    st.progress(st.session_state.progress / 100, text=f"当前整体进度：{st.session_state.progress}%")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ========== 状态指标（可折叠） ==========
     st.divider()
-    # 把指标区域用折叠组件包起来，默认收起
-    with st.expander("求解状态指标", expanded=False):
+    with st.expander("详细求解状态指标", expanded=False):
+        st.markdown(
+            """
+            <div style="padding: 1rem; background-color: #f8f9fa; border-radius: 10px; border: 1px solid #e9ecef;">
+            """,
+            unsafe_allow_html=True
+        )
         row1_col1, row1_col2, row1_col3 = st.columns(3, gap="medium")
         with row1_col1:
             st.metric("当前阶段", st.session_state.current_stage)
@@ -1102,12 +1122,15 @@ if page == "今日调度":
             st.metric("已用时间", f"{int(time.time()-st.session_state.start_time)}s" if st.session_state.start_time else "0s")
         with row1_col3:
             st.metric("预计剩余", f"{int((100-st.session_state.progress)*0.5)}s" if st.session_state.progress<100 else "0s")
+
         st.divider()
+
         row2_col1, row2_col2 = st.columns(2, gap="medium")
         with row2_col1:
             st.metric("当前收敛Gap", f"{st.session_state.current_gap:.4f}")
         with row2_col2:
             st.metric("目标值", f"{st.session_state.current_objective:.2f}")
+        st.markdown("</div>", unsafe_allow_html=True)
     st.divider()
 
 # -------------------------- 数据管理页面 --------------------------
