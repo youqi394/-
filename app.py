@@ -124,30 +124,26 @@ h1, h2, h3 {
 }
 
 /* ========== 侧边栏整体美化 ========== */
-/* ========== 侧边栏整体美化（清新淡雅背景） ========== */
-# 隐藏默认样式 + 设置背景图
 hide_streamlit_style = """
-<style>
-/* 隐藏顶部导航栏 */
-#MainMenhide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* ========== 左侧侧边栏背景 ========== */
+/* ========== 左侧侧边栏背景（已修复padding） ========== */
 [data-testid="stSidebar"] {
     background-color: #f0f5fa;
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
     background-attachment: fixed;
-    padding: 1.2rem 0.8rem !important;
+    /* 改用像素值，彻底避免Python解析错误 */
+    padding: 19px 13px !important;
 }
 
 /* 侧边栏文字半透明遮罩，保证黑字清晰 */
 [data-testid="stSidebar"] > div:first-child {
     background-color: rgba(255, 255, 255, 0.9);
-    padding: 1rem;
+    padding: 16px;
     border-radius: 8px;
 }
 
@@ -164,16 +160,12 @@ footer {visibility: hidden;}
 .stApp > div:first-child > div:first-child {
     background-color: rgba(255, 255, 255, 0.9);
     border-radius: 12px;
-    padding: 1rem;
+    padding: 16px;
 }
 </style>
 """
 
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-
-# 加载样式
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
-
 /* 「功能模块」文字 加粗+放大 */
 [data-testid="stSidebar"] p:has(label) {
     font-size: 1.1rem !important;
