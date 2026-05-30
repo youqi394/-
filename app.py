@@ -125,9 +125,16 @@ h1, h2, h3 {
 
 /* ========== 侧边栏整体美化 ========== */
 /* ========== 侧边栏整体美化（清新淡雅背景） ========== */
+# 隐藏默认样式 + 设置背景图
+hide_streamlit_style = """
+<style>
+/* 隐藏顶部导航栏 */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+
+/* ========== 左侧侧边栏背景 ========== */
 [data-testid="stSidebar"] {
     background-color: #f0f5fa;
-    background-image: url("https://images.unsplash.com/photo-1557683316-973673baf926?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -135,28 +142,33 @@ h1, h2, h3 {
     padding: 1.2rem 0.8rem !important;
 }
 
-/* 侧边栏文字半透明遮罩，保证可读性 */
+/* 侧边栏文字半透明遮罩，保证黑字清晰 */
 [data-testid="stSidebar"] > div:first-child {
-    background-color: rgba(255, 255, 255, 0.85);
+    background-color: rgba(255, 255, 255, 0.9);
     padding: 1rem;
     border-radius: 8px;
 }
 
-/* ========== 主页面背景图（清新淡雅，和侧边栏呼应） ========== */
+/* ========== 右侧主页面背景（蓝色公交主题） ========== */
 .stApp {
-    background-image: url("https://images.unsplash.com/photo-1507400492013-162706c8c05e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80");
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
+    background-image: url("https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80");
+    background-size: cover;       /* 图片铺满整个页面 */
+    background-position: center;  /* 图片居中显示 */
+    background-repeat: no-repeat; /* 图片不重复平铺 */
+    background-attachment: fixed;/* 背景固定，不随滚动条移动 */
 }
 
-/* 给主页面内容也加一层半透明遮罩，保证文字清晰 */
+/* 主页面内容半透明遮罩，保证文字/表格清晰 */
 .stApp > div:first-child > div:first-child {
-    background-color: rgba(255, 255, 255, 0.85);
+    background-color: rgba(255, 255, 255, 0.9);
     border-radius: 12px;
     padding: 1rem;
 }
+</style>
+"""
+
+# 加载样式
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 /* 「功能模块」文字 加粗+放大 */
 [data-testid="stSidebar"] p:has(label) {
