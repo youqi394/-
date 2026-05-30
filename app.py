@@ -129,6 +129,8 @@ h1, h2, h3 {
 hide_streamlit_style = """
 <style>
 /* 隐藏顶部导航栏 */
+#MainMenhide_streamlit_style = """
+<style>
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
@@ -151,11 +153,11 @@ footer {visibility: hidden;}
 
 /* ========== 右侧主页面背景（蓝色公交主题） ========== */
 .stApp {
-    background-image: url("https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80");
-    background-size: cover;       /* 图片铺满整个页面 */
-    background-position: center;  /* 图片居中显示 */
-    background-repeat: no-repeat; /* 图片不重复平铺 */
-    background-attachment: fixed;/* 背景固定，不随滚动条移动 */
+    background-image: url("https://images.unsplash.com/photo-1564612441657-108762776959?auto=format&fit=crop&w=1600&q=80");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
 }
 
 /* 主页面内容半透明遮罩，保证文字/表格清晰 */
@@ -166,6 +168,8 @@ footer {visibility: hidden;}
 }
 </style>
 """
+
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # 加载样式
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
