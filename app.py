@@ -66,6 +66,22 @@ footer {visibility: hidden;}
 header[data-testid="stHeader"] {
     visibility: hidden !important;
     height: 0 !important;
+}# ==================== 全局页面样式（无白条 + 侧边栏正常显示） ====================
+hide_streamlit_style = """
+<style>
+/* 隐藏默认菜单和页脚 */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+
+/* 关键：让顶部导航栏变透明，消除白条，同时不影响侧边栏按钮 */
+header[data-testid="stHeader"] {
+    background-color: transparent !important;
+    box-shadow: none !important;
+}
+header[data-testid="stHeader"] button,
+header[data-testid="stHeader"] svg {
+    color: #2c3e50 !important;
+    fill: #2c3e50 !important;
 }
 
 /* 按钮美化 */
