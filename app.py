@@ -1002,7 +1002,7 @@ st.sidebar.title("智能公交调度系统")
 st.sidebar.divider()
 page = st.sidebar.radio("功能模块", ["今日调度", "数据管理", "统计预测结果", "优化求解", "排班结果"])
 st.sidebar.divider()
-st.sidebar.info("智能公交调度系统")
+
 
 # -------------------------- 今日调度页面 --------------------------
 if page == "今日调度":
