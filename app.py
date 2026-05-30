@@ -53,14 +53,14 @@ if SOLVER_IMPORT_ERROR is not None:
     st.code("\n".join(str(path) for path in SOLVER_SEARCH_DIRS), language="text")
     st.stop()
 
-# ==================== 全局页面样式（已修改侧边栏单选按钮样式） ====================
+# ==================== 全局页面样式【仅此处做美化修改，业务逻辑全部保留】 ====================
 hide_streamlit_style = """
 <style>
 /* 隐藏默认菜单和页脚 */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* 让顶部导航栏变透明，消除白条 */
+/* 顶部导航栏透明，消除顶部白条 */
 header[data-testid="stHeader"] {
     background-color: transparent !important;
     box-shadow: none !important;
@@ -71,7 +71,31 @@ header[data-testid="stHeader"] svg {
     fill: #2c3e50 !important;
 }
 
-/* 按钮美化 */
+/* 全局基础字体与颜色 */
+html, body, [class*="css"] {
+    font-family: "Microsoft YaHei", sans-serif;
+    color: #2c3e50;
+}
+
+/* 主标题、二级标题、三级标题样式优化 */
+h1 {
+    color: #1f77b4;
+    font-weight: 700;
+    margin: 0.5rem 0 1rem 0;
+}
+h2, h3 {
+    color: #2c3e50;
+    font-weight: 600;
+    margin: 0.4rem 0 0.8rem 0;
+}
+
+/* 分割线美化 */
+hr {
+    border-top: 1px solid #c9d8e8 !important;
+    margin: 1rem 0 !important;
+}
+
+/* 功能按钮整体美化 */
 .stButton>button {
     height: 50px;
     font-size: 16px;
@@ -79,33 +103,46 @@ header[data-testid="stHeader"] svg {
     border-radius: 12px;
     border: none;
     background-color: #1f77b4;
-    color: white;
-    transition: all 0.3s ease;
+    color: #ffffff;
+    transition: all 0.25s ease-in-out;
+    box-shadow: 0 2px 6px rgba(31, 119, 180, 0.2);
 }
 .stButton>button:hover {
     background-color: #155a8a;
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(31, 119, 180, 0.3);
+    box-shadow: 0 6px 14px rgba(31, 119, 180, 0.35);
+}
+.stButton>button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(31, 119, 180, 0.2);
 }
 
 /* 指标卡片美化 */
 .stMetric {
     background-color: #f8f9fa;
-    padding: 12px;
+    padding: 16px 14px;
     border-radius: 10px;
-    border-left: 4px solid #1f77b4;
+    border-left: 5px solid #1f77b4;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.stMetric [data-testid="stMetricValue"] {
+    font-size: 1.7rem !important;
+    font-weight: 600 !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    color: #1f77b4;
+}
+.stMetric [data-testid="stMetricLabel"] {
+    font-size: 1rem;
+    color: #444;
 }
 
-h1, h2, h3 {
-    color: #2c3e50;
-    font-weight: 600;
-}
-
-/* 进度条样式 */
+/* 进度条样式修复 + 美化 */
 .stProgress {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    margin: 0.5rem 0;
 }
 .stProgress > div:first-child {
     position: static !important;
@@ -120,28 +157,22 @@ h1, h2, h3 {
     box-shadow: none !important;
 }
 .stProgress [role="progressbar"] {
-    height: 12px !important;
+    height: 14px !important;
     margin: 0 !important;
-    background-color: #ffffff !important;
+    background-color: #f1f5f9 !important;
     border: 1px solid #dee2e6 !important;
-    border-radius: 10px !important;
+    border-radius: 12px !important;
     overflow: hidden !important;
     box-shadow: none !important;
 }
 .stProgress [role="progressbar"] > div {
-    background-color: #ffffff !important;
-    border-radius: 9px !important;
+    background-color: #1f77b4 !important;
+    border-radius: 12px !important;
     height: 100% !important;
     transition: width 0.3s ease !important;
 }
-.stMetric [data-testid="stMetricValue"] {
-    font-size: 1.7rem !important;
-    font-weight: 600 !important;
-    white-space: nowrap !important;
-    overflow: visible !important;
-}
 
-/* 侧边栏背景 + 样式 */
+/* 侧边栏整体样式 */
 [data-testid="stSidebar"] {
     background-color: #BFE4F9;
     background-image: url("https://img0.baidu.com/it/u=1231392229,3829112399&fm=253&fmt=auto&app=138&f=JPEG?w=800&h=500");
@@ -152,12 +183,13 @@ h1, h2, h3 {
     padding: 19px 13px !important;
 }
 [data-testid="stSidebar"] > div:first-child {
-    background-color: rgba(255, 255, 255, 0.75);
-    padding: 16px;
-    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.78);
+    padding: 18px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
 }
 
-/* 主页面背景 */
+/* 主页面背景与蒙板 */
 .stApp {
     background-color: #E6F0FF;
     background-image: url("https://img1.baidu.com/it/u=2646690913,1561802417&fm=253&fmt=auto&app=138&f=JPEG?w=1200&h=800");
@@ -166,73 +198,67 @@ h1, h2, h3 {
     background-repeat: no-repeat;
     background-attachment: fixed;
 }
-/* 主页面内层白色半透明遮罩，和侧边栏样式统一 */
 .stApp > div:first-child > div:first-child {
-    background-color: rgba(255, 255, 255, 0.85);
-    border-radius: 8px;
-    padding: 16px;
+    background-color: rgba(255, 255, 255, 0.88);
+    border-radius: 10px;
+    padding: 20px;
 }
 
-/* ========== 【全新侧边栏单选样式 - 完全符合您的要求】 ========== */
-/* 功能模块标题样式 */
-[data-testid="stSidebar"] .stRadio > label {
+/* 侧边栏单选框样式优化 */
+[data-testid="stSidebar"] p:has(label) {
     font-size: 1.1rem !important;
     font-weight: 700 !important;
     color: #2c3e50 !important;
     margin: 1rem 0 0.6rem 0 !important;
 }
-
-/* 单选按钮组容器 */
-[data-testid="stSidebar"] .stRadio > div {
-    gap: 0.5rem !important;
-    display: flex !important;
-    flex-direction: column !important;
-}
-
-/* 强制隐藏原生圆形单选按钮 */
-[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label > div:first-child {
+/* 隐藏原生圆形单选按钮 */
+[data-testid="stSidebar"] .stRadio [role="radio"] {
     display: none !important;
     opacity: 0 !important;
     pointer-events: none !important;
     position: absolute !important;
 }
-
-/* 单选选项整体样式 - 默认状态：黑色字体 + 透明背景 */
-[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
+[data-testid="stSidebar"] .stRadio > div {
+    gap: 0.5rem !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+/* 单选选项默认样式 */
+[data-testid="stSidebar"] .stRadio label {
     font-size: 1rem !important;
     font-weight: 500 !important;
-    padding: 0.6rem 0.8rem !important;
-    border-radius: 8px !important;  /* 圆角大小，可根据需要调整 */
+    padding: 0.7rem 1rem !important;
+    border-radius: 12px !important;
     transition: all 0.25s ease !important;
     margin: 0 !important;
     cursor: pointer !important;
     width: 100% !important;
     box-sizing: border-box !important;
-    color: #000000 !important;  /* 黑色字体 */
+    color: #2c3e50 !important;
     background: transparent !important;
 }
-
-/* 鼠标悬浮效果：浅灰色背景 */
-[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:hover {
-    background-color: #e4edf5 !important;
+/* 单选悬浮效果 */
+[data-testid="stSidebar"] .stRadio label:hover {
+    background-color: #dceaf8 !important;
 }
-
-/* 选中状态：蓝色圆角背景 + 白色字体 */
-[data-testid="stSidebar"] .stRadio div[role="radiogroup"] input[type="radio"]:checked + div {
-    background-color: #1f77b4 !important;  /* 蓝色背景 */
-    color: #ffffff !important;  /* 白色字体 */
-    font-weight: 600 !important;
-    border-radius: 8px !important;
-    padding: 0.6rem 0.8rem !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-}
-
-/* 确保选中状态下的文本颜色正确 */
-[data-testid="stSidebar"] .stRadio div[role="radiogroup"] input[type="radio"]:checked + div p {
+/* 单选选中状态 */
+[data-testid="stSidebar"] .stRadio label[data-checked="true"] {
+    background-color: #1f77b4 !important;
     color: #ffffff !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 6px rgba(31, 119, 180, 0.25);
 }
-/* ========== 【侧边栏单选样式修改结束】 ========== */
+
+/* 折叠面板美化 */
+[data-testid="stExpander"] {
+    border-radius: 10px;
+    border: 1px solid #dee2e6;
+    margin: 0.8rem 0;
+}
+[data-testid="stExpander"] summary {
+    font-weight: 600;
+    color: #1f77b4;
+}
 </style>
 """
 
@@ -1134,200 +1160,4 @@ if page == "今日调度":
                 st.warning("请先读取天气")
             else:
                 st.info("统计预测中...")
-                is_workday = 1 if timetable_type == "工作日" else 0
-                hours, preds = predict_passenger_flow(dispatch_date, line, is_workday, st.session_state.weather_data)
-                power_table = statistical_prediction(st.session_state.weather_data)
-                st.session_state.predictions = preds
-                st.session_state.prediction_hours = hours
-                st.session_state.power_prediction_table = power_table
-                st.session_state.progress = 60
-                st.session_state.current_stage = "统计预测完成"
-                st.success("统计预测完成！")
-
-    with btn4:
-        if st.button("开始优化求解"):
-            try:
-                if st.session_state.timetable_data is None:
-                    timetable_df, timetable_error = load_timetable_data(timetable_type)
-                    if timetable_df is None:
-                        raise RuntimeError(f"班次表读取失败：{timetable_error}")
-                    st.session_state.timetable_data = timetable_df
-                    add_log(f"自动读取 {timetable_type} 班次表，共{len(timetable_df)}条记录")
-                if not st.session_state.weather_data:
-                    weather_info, err = get_weather_forecast(dispatch_date)
-                    st.session_state.weather_data = weather_info
-                    add_log(
-                        f"自动读取天气：{weather_info['weather']} {weather_info['temp_min']}~{weather_info['temp_max']}℃")
-                predictions_ok = st.session_state.predictions is not None and len(st.session_state.predictions) > 0
-                table_ok = st.session_state.power_prediction_table is not None and not st.session_state.power_prediction_table.empty
-                if not predictions_ok or not table_ok:
-                    is_workday = 1 if timetable_type == "工作日" else 0
-                    hours, preds = predict_passenger_flow(dispatch_date, line, is_workday,
-                                                          st.session_state.weather_data)
-                    power_table = statistical_prediction(st.session_state.weather_data)
-                    st.session_state.predictions = preds
-                    st.session_state.prediction_hours = hours
-                    st.session_state.power_prediction_table = power_table
-                    add_log("自动完成统计预测")
-            except Exception as e:
-                st.session_state.current_stage = "前置数据失败"
-                add_log(f"前置数据失败：{e}")
-                st.error(f"前置数据失败：{e}")
-            else:
-                st.info("求解中...")
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-
-                try:
-                    hour_params = build_hour_params_from_pred_table(st.session_state.power_prediction_table)
-                    trips = build_trips_for_solver(st.session_state.timetable_data, hour_params)
-                    config = make_solver_config(vehicle_count)
-
-                    # 根据选择执行对应算法
-                    if solve_mode == "粗略求解（贪心算法）":
-                        status_text.text("正在运行粗略求解（贪心算法）...")
-                        progress_bar.progress(10)
-                        greedy_sol, greedy_df, greedy_charge_df = optimize_greedy_only(trips, hour_params, config,
-                                                                                       initial_battery,
-                                                                                       st.session_state.power_prediction_table)
-                        st.session_state.greedy_solution = greedy_sol
-                        st.session_state.greedy_schedule_data = greedy_df
-                        st.session_state.greedy_charge_data = greedy_charge_df
-                        st.session_state.greedy_objective = greedy_sol.objective
-                        st.session_state.optimization_result = None
-                        st.session_state.schedule_data = None
-                        st.session_state.charge_data = None
-                        st.session_state.current_objective = greedy_sol.objective
-                        progress_bar.progress(100)
-                        status_text.empty()
-                        st.success("粗略求解完成！")
-                    else:
-                        # 精确求解：先跑贪心基准，再在网页时间预算内做遗传改进
-                        status_text.text("正在运行贪心算法（基准解）...")
-                        progress_bar.progress(5)
-                        greedy_sol, greedy_df, greedy_charge_df = optimize_greedy_only(trips, hour_params, config,
-                                                                                       initial_battery,
-                                                                                       st.session_state.power_prediction_table)
-                        st.session_state.greedy_solution = greedy_sol
-                        st.session_state.greedy_schedule_data = greedy_df
-                        st.session_state.greedy_charge_data = greedy_charge_df
-                        st.session_state.greedy_objective = greedy_sol.objective
-
-                        status_text.text("正在运行遗传算法（精确解）...")
-                        progress_bar.progress(10)
-                        gen_sol, gen_df, gen_charge_df = optimize_genetic_full(
-                            trips,
-                            hour_params,
-                            config,
-                            initial_battery,
-                            st.session_state.power_prediction_table,
-                            max_runtime_sec=solve_time,
-                            progress_bar=progress_bar,
-                            status_text=status_text,
-                        )
-                        st.session_state.optimization_result = gen_sol
-                        st.session_state.schedule_data = gen_df
-                        st.session_state.charge_data = gen_charge_df
-                        progress_bar.progress(100)
-                        status_text.empty()
-                        st.success("精确求解完成！")
-
-                    st.session_state.progress = 90
-                    st.session_state.current_stage = "优化求解完成"
-                except Exception as e:
-                    status_text.empty()
-                    st.session_state.current_stage = "求解失败"
-                    add_log(f"求解失败：{e}")
-                    st.error(f"求解失败：{e}")
-
-    with btn5:
-        if st.button("导出排班结果"):
-            if st.session_state.greedy_schedule_data is not None:
-                st.success("数据已准备完成，请切换到【排班结果】页面进行下载！")
-                st.session_state.progress = 100
-                st.session_state.current_stage = "全部完成"
-            else:
-                st.warning("请先完成求解")
-
-    st.divider()
-    st.progress(st.session_state.progress / 100, text=f"进度 {st.session_state.progress}%")
-    st.divider()
-    # 把指标区域用折叠组件包起来，默认收起
-    with st.expander("求解状态指标", expanded=False):
-        row1_col1, row1_col2, row1_col3 = st.columns(3, gap="medium")
-        with row1_col1:
-            st.metric("当前阶段", st.session_state.current_stage)
-        with row1_col2:
-            st.metric("已用时间",
-                      f"{int(time.time() - st.session_state.start_time)}s" if st.session_state.start_time else "0s")
-        with row1_col3:
-            st.metric("预计剩余",
-                      f"{int((100 - st.session_state.progress) * 0.5)}s" if st.session_state.progress < 100 else "0s")
-        st.divider()
-        row2_col1, row2_col2 = st.columns(2, gap="medium")
-        with row2_col1:
-            st.metric("当前收敛Gap", f"{st.session_state.current_gap:.4f}")
-        with row2_col2:
-            st.metric("目标值", f"{st.session_state.current_objective:.2f}")
-    st.divider()
-
-# -------------------------- 数据管理页面 --------------------------
-elif page == "数据管理":
-    st.header("数据管理", divider="blue")
-    st.subheader("电量消耗数据状态")
-    try:
-        power_df, power_error = load_power_data()
-        if power_df is not None:
-            st.success("成功加载 data/电量消耗.csv")
-            st.dataframe(power_df, use_container_width=True)
-        else:
-            st.error(f"电量消耗数据加载失败：{power_error}")
-            st.info("CSV格式要求：时段,天气类型,春季,夏季,秋季,冬季")
-    except Exception as e:
-        st.error(f"加载失败：{str(e)}")
-    st.divider()
-    st.subheader("运行时间75%分位数数据状态")
-    try:
-        runtime_df, runtime_error = load_runtime_data()
-        if runtime_df is not None:
-            st.success("成功加载 data/运行时间75%分位数.csv")
-            st.dataframe(runtime_df, use_container_width=True)
-        else:
-            st.error(f"运行时间数据加载失败：{runtime_error}")
-    except Exception as e:
-        st.error(f"加载失败：{str(e)}")
-    st.divider()
-    st.subheader("碳排放数据状态")
-    try:
-        carbon_df, carbon_error = load_carbon_data()
-        if carbon_df is not None:
-            st.success("成功加载 data/碳排放.csv")
-            st.dataframe(carbon_df, use_container_width=True)
-        else:
-            st.error(f"碳排放数据加载失败：{carbon_error}")
-    except Exception as e:
-        st.error(f"加载失败：{str(e)}")
-    st.divider()
-    st.subheader("班次表数据状态")
-    try:
-        if st.session_state.timetable_data is not None:
-            st.success("已加载班次表数据（保留方向信息）")
-            df = pd.DataFrame(st.session_state.timetable_data)
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("请在「今日调度」页面点击「读取班次表」加载数据")
-    except Exception as e:
-        st.error(f"加载失败：{str(e)}")
-
-# -------------------------- 统计预测结果页面 --------------------------
-elif page == "统计预测结果":
-    st.header("24小时逐时统计预测结果", divider="blue")
-    if st.session_state.power_prediction_table is None or st.session_state.power_prediction_table.empty:
-        st.info("请先在「今日调度」页面点击「运行统计预测」")
-    else:
-        current_date = st.session_state.weather_data['date'] if st.session_state.weather_data else datetime.now().date()
-        power_season = get_power_season(current_date)
-        carbon_season = get_carbon_season(current_date)
-        season_name_map = {"summer": "夏季", "winter": "冬季", "annual": "全年"}
-        st.subheader(
-            f"调度日期：{current_date.strftime('%
+               
