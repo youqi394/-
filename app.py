@@ -1091,9 +1091,10 @@ st.sidebar.markdown(
 
 
 # -------------------------- 今日调度页面 --------------------------
+# -------------------------- 今日调度页面 --------------------------
 if page == "今日调度":
     st.header("智能公交调度", divider="blue")
-        col1, col2 = st.columns(2)
+    col1, col2 = st.columns(2)
     with col1:
         dispatch_date = st.date_input("调度日期", datetime.now().date())
         line = st.selectbox("线路/场站", ["北京1路", "北京2路", "雄安301路", "雄安302路", "雄安319路"])
@@ -1120,7 +1121,7 @@ if page == "今日调度":
     st.divider()
 
     btn1, btn2, btn3, btn4, btn5 = st.columns(5, gap="small")
-    with btn1:  # ✅ 现在缩进正确了
+    with btn1:
         if st.button("读取班次表"):
             # 新增：表单验证逻辑
             if not line or not timetable_type or not solve_time:
@@ -1144,6 +1145,7 @@ if page == "今日调度":
                     st.warning(f"未找到 {timetable_type} 班次表，使用示例数据")
                 st.session_state.progress = 24
                 st.session_state.current_stage = "班次已加载"
+
     with btn2:
         if st.button("读取天气"):
             weather_info, err = get_weather_forecast(dispatch_date)
@@ -1295,7 +1297,6 @@ if page == "今日调度":
         with row2_col2:
             st.metric("目标值", f"{st.session_state.current_objective:.2f}")
     st.divider()
-
 # -------------------------- 数据管理页面 --------------------------
 elif page == "数据管理":
     st.header("数据管理", divider="blue")
