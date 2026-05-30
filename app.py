@@ -1081,7 +1081,7 @@ if page == "今日调度":
                     add_log(f"求解失败：{e}")
                     st.error(f"求解失败：{e}")
 
-        with btn5:
+    with btn5:
         if st.button("导出排班结果"):
             if st.session_state.greedy_schedule_data is not None:
                 st.success("数据已准备完成，请切换到【排班结果】页面进行下载！")
