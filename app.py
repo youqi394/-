@@ -1094,7 +1094,7 @@ if page == "今日调度":
     st.progress(st.session_state.progress / 100, text=f"进度 {st.session_state.progress}%")
     st.divider()
     # 把指标区域用折叠组件包起来，默认收起
-    with st.expander("📊 求解状态指标", expanded=False):
+    with st.expander("求解状态指标", expanded=False):
         row1_col1, row1_col2, row1_col3 = st.columns(3, gap="medium")
         with row1_col1:
             st.metric("当前阶段", st.session_state.current_stage)
