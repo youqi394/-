@@ -123,47 +123,21 @@ h1, h2, h3 {
     overflow: visible !important;
 }
 
-/* ========== 侧边栏整体美化 ========== */
+import streamlit as st
+
+# 不添加任何背景图，只隐藏默认的顶部菜单和页脚，不会报错
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
-
-
-[data-testid="stSidebar"] {
-    background-color: #f0f5fa;
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-   
-    padding: 19px 13px !important;
-}
-
-
-[data-testid="stSidebar"] > div:first-child {
-    background-color: rgba(255, 255, 255, 0.9);
-    padding: 16px;
-    border-radius: 8px;
-}
-
-
-.stApp {
-    background-image: url("https://images.unsplash.com/photo-1564612441657-108762776959?auto=format&fit=crop&w=1600&q=80");
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-}
-
-
-.stApp > div:first-child > div:first-child {
-    background-color: rgba(255, 255, 255, 0.9);
-    border-radius: 12px;
-    padding: 16px;
-}
 </style>
 """
+
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# 你的业务代码从这里开始
+# st.title("你的公交调度系统")
+# ...
 
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 /* 「功能模块」文字 加粗+放大 */
