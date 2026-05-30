@@ -1108,13 +1108,13 @@ if page == "今日调度":
     st.divider()
 
     # 新增：显示表单验证警告信息
+    # 新增：显示表单验证警告信息
     if st.session_state.form_warning:
-        # 自动清除：如果用户已经选择了所有参数，警告立即消失
-        if line and timetable_type and solve_time:
+    # 只要修改了任意一个默认参数，自动清空警告
+        if not (line == "北京1路" and timetable_type == "工作日" and solve_time == 45):
             st.session_state.form_warning = ""
         else:
             st.error(st.session_state.form_warning)
-
     solve_mode = st.selectbox("优化求解方式", ["粗略求解（贪心算法）", "精确求解（遗传算法）"])
     # 保存当前选择的模式，供其他页面判断
     st.session_state.current_solve_mode = solve_mode
@@ -1123,8 +1123,8 @@ if page == "今日调度":
     btn1, btn2, btn3, btn4, btn5 = st.columns(5, gap="small")
     with btn1:
         if st.button("读取班次表"):
-            # 新增：表单验证逻辑
-            if not line or not timetable_type or not solve_time:
+            # ========== 仅修改这里的判断条件，其余全部保留 ==========
+            if line == "北京1路" and timetable_type == "工作日" and solve_time == 45:
                 st.session_state.form_warning = "⚠️ 您还未选择班次表、线路、求解时间上限等参数，请先选择后再读取班次表"
             else:
                 # 清除警告信息
