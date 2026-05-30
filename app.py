@@ -207,6 +207,8 @@ h1, h2, h3 {
 """
 
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+# 侧边栏底部文字
+st.sidebar.markdown("<div style='text-align:center;margin-top:30px;color:#2c3e50;padding:10px;'>此页面设计来自“周尤王”团队</div>", unsafe_allow_html=True)
 # ==================== 会话状态初始化（完全保留原逻辑） ====================
 if 'progress' not in st.session_state:
     st.session_state.progress = 0
