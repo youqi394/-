@@ -1047,7 +1047,7 @@ page = st.sidebar.radio("功能模块", ["今日调度", "数据管理", "统计
 st.sidebar.divider()
 # 侧边栏底部落款
 st.sidebar.markdown(
-    "<div style='margin-top: 80px; text-align: center; color: #2c3e50; font-size: 14px;'>此页面设计来自“周尤王”团队</div>",
+    "<div style='margin-top: 60px; text-align: center; color: #2c3e50; font-size: 14px;'>此页面设计来自“周尤王”团队</div>",
     unsafe_allow_html=True
 )
 
