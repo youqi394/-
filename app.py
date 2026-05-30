@@ -170,11 +170,7 @@ h1, h2, h3 {
     border-color: #d8e2ec !important;
 }
 
-/* 侧边栏底部提示文字 */
-[data-testid="stSidebar"] .stInfo {
-    border-radius: 8px !important;
-    background-color: #e4edf5 !important;
-}
+
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
