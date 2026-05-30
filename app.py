@@ -146,7 +146,7 @@ h1, h2, h3 {
 
 /* 侧边栏背景 + 样式 */
 [data-testid="stSidebar"] {
-   
+    background-color: #BFE4F9;
     background-image: url("https://img0.baidu.com/it/u=1231392229,3829112399&fm=253&fmt=auto&app=138&f=JPEG?w=800&h=500");
     background-size: cover;
     background-position: center;
