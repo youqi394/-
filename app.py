@@ -126,7 +126,20 @@ h1, h2, h3 {
 /* ========== 侧边栏整体美化 ========== */
 [data-testid="stSidebar"] {
     background-color: #f0f5fa;
+    /* 加入适配的背景图 */
+    background-image: url("https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&q=80");
+    background-size: cover; /* 图片铺满整个侧边栏 */
+    background-position: center; /* 图片居中显示 */
+    background-repeat: no-repeat; /* 图片不重复平铺 */
+    background-attachment: fixed; /* 背景固定，不随滚动条移动 */
     padding: 1.2rem 0.8rem !important;
+}
+
+/* 给侧边栏文字加一层半透明遮罩，保证文字清晰可读 */
+[data-testid="stSidebar"] > div:first-child {
+    background-color: rgba(255, 255, 255, 0.75);
+    padding: 1rem;
+    border-radius: 8px;
 }
 
 
@@ -1001,10 +1014,7 @@ def optimize_genetic_full(
 # ==================== 侧边栏 & 页面布局（完全保留原逻辑） ====================
 st.sidebar.title("智能公交调度系统")
 
-st.sidebar.image(
-    "https://cdn-icons-png.flaticon.com/512/2830/2830569.png",
-    use_column_width=True
-)
+
 
 st.sidebar.divider()
 page = st.sidebar.radio("功能模块", ["今日调度", "数据管理", "统计预测结果", "优化求解", "排班结果"])
