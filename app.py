@@ -144,7 +144,7 @@ h1, h2, h3 {
 
 /* ========== 主页面背景图（解决右侧单调问题） ========== */
 .stApp {
-    background-image: url("https://images.unsplash.com/photo-1507400492013-162706c8c05e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80");
+    background-image: url("https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=80");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
