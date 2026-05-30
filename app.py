@@ -129,7 +129,7 @@ hide_streamlit_style = """
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 
-/* ========== 左侧侧边栏背景（已修复padding） ========== */
+
 [data-testid="stSidebar"] {
     background-color: #f0f5fa;
     background-size: cover;
